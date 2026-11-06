@@ -282,7 +282,7 @@ const IDLES = {
   jiggle: (t, e) => { const w = S(t * 3.3 + e.seed); return {ox:0, oy:w * 1.4, rot:0, sx:1 + .12 * w, sy:1 - .12 * w}; },
   breathe:(t, e) => { const w = S(t * 1.8 + e.seed); return {ox:0, oy:0, rot:0, sx:1 + .04 * w, sy:1 + .05 * w}; },
   throat: (t, e) => { const f = Math.pow(Math.max(0, S(t * 1.6 + e.seed)), 8); return {ox:0, oy:0, rot:0, sx:1 + .18 * f, sy:1 - .05 * f}; },
-  wiggle: (t, e) => ({ox:1.5 * S(t * 4 + e.seed + 1), oy:0, rot:.28 * S(t * 4 + e.seed), sx:1, sy:1}),
+  wiggle: (t, e) => ({ox:3 * S(t * 4 + e.seed + 1), oy:0, rot:.28 * S(t * 4 + e.seed), sx:1, sy:1}),
   float:  (t, e) => ({ox:S(t * 1.3 + e.seed) * 2.5, oy:S(t * 2 + e.seed) * 4 - 2, rot:.12 * S(t + e.seed), sx:1, sy:1}),
   sway:   (t, e) => ({ox:0, oy:0, rot:.08 * S(t * 1.1 + e.seed), sx:1, sy:1}),
   pant:   (t, e) => ({ox:0, oy:0, rot:0, sx:1, sy:1 + .06 * S(t * 11 + e.seed)}),
@@ -321,7 +321,7 @@ function updateEnt(e, t, tn){
     else { const k = (1 - p) * (1 - p); x += e.knock.dx * .22 * k; y += e.knock.dy * .22 * k; T.sx *= 1 + .25 * k; T.sy *= 1 - .2 * k; T.rot += e.knock.dx * .25 * k; }
   }
   const idle = (e.isPlayer ? IDLES.player : e.npc ? IDLES.rock : IDLES[D.idle]);
-  if (idle && !e.frozen) { const f = idle(t, e); T.ox += f.ox; T.oy += f.oy; T.rot += f.rot; T.sx *= f.sx; T.sy *= f.sy; }
+  if (idle && !e.frozen) { const f = idle(t, e); T.ox += f.ox / TW; T.oy += f.oy; T.rot += f.rot; T.sx *= f.sx; T.sy *= f.sy; }
   if (D.flip || e.isPlayer) T.sx *= e.face < 0 ? -1 : 1;
   T.sx *= e.sz; T.sy *= e.sz;
   e.vx = x; e.vy = y; e.tf = T;
@@ -1054,10 +1054,10 @@ function drawTiles(t, tn){
       if (rnd() < .002) { part(x, y, 0, -.6, .8, '°', [1,.55,.15], -.1); ember(x, y); }
     } else if (d.plant) {
       const tree = d.tree, wind = L ? L.wind : 0, g2 = L ? gust(t, x) * wind : 0;
-      const amp = (key === 'BUSH' ? .6 : tree ? .5 : key === 'REEDS' ? 2.2 : 1.7) * (1 + wind * 2.2);
-      let sw = Math.sin(t*1.4 + x*.55 + y*.25 + h*2) * amp + g2 * (tree ? 2 : 4) * W.dir + wind * W.dir * (tree ? .6 : 1.5);
+      const reed = key === 'REEDS', amp = (key === 'BUSH' ? .6 : tree ? .5 : reed ? 1.2 : 1.7) * (1 + wind * (reed ? 1.4 : 2.2)) * (z === Z.MIRE ? .75 : 1);
+      let sw = Math.sin(t*1.4 + x*.55 + y*.25 + h*2) * amp + g2 * (tree ? 2 : reed ? 2.4 : 4) * W.dir + wind * W.dir * (tree ? .6 : reed ? 1 : 1.5);
       if (L && L.rain > .1) sw += (noise2(t * 9, i) - .5) * 3 * L.rain;            // rain shakes the leaves
-      ox = sw; rot = sw * (tree ? .035 : key === 'BUSH' ? .03 : .08);
+      ox = sw; rot = sw * (tree ? .035 : key === 'BUSH' ? .03 : reed ? .05 : .08);
       if (key === 'FLOWER') { const c = FLOWERC[Math.floor(h * 4)]; cr = c[0]; cg = c[1]; cb = c[2]; }
       if (tree && L) {
         if (L.rain > .2 && rnd() < .004 * L.rain) part(x + (rnd() - .5) * .6, y, 0, 3, .35, '.', [.6,.75,1], 8);
