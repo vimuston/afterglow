@@ -51,6 +51,11 @@ const TD = {
   LAVA:     {ch:'≈', col:[1.0,.38,.06], block:1, lava:1},
   OBSIDIAN: {ch:'▪', col:[.50,.38,.68]},
   VENT:     {ch:'^', col:[1.0,.55,.2], block:1},
+  // secrets
+  SECRET:   {ch:'#', col:[.74,.52,.86], block:1, opaque:1},
+  RUBBLE:   {ch:':', col:[.55,.48,.58]},
+  ALTAR:    {ch:'Ω', col:[1.0,.85,.55], block:1},
+  ALTARSPENT:{ch:'Ω', col:[.45,.42,.48], block:1},
 };
 const TNAME = {WALL:'wall', FLOOR:'floor', ASH:'ash', WATER:'shallow water', DEEP:'deep water', ICE:'ice',
   ICEWALL:'frozen wall', GRASS:'grass', BUSH:'bush', DOOR:'door', OPEN:'open door', CRATE:'wooden crate',
@@ -58,7 +63,8 @@ const TNAME = {WALL:'wall', FLOOR:'floor', ASH:'ash', WATER:'shallow water', DEE
   MEADOW:'short grass', FLOWER:'wildflowers', TREE:'tree', DIRT:'dirt path', STONE:'stone wall', WINDOW:'window',
   PLANK:'wooden floor', RUG:'woven rug', HEARTH:'hearth (the kettle is on)', TABLE:'table', CHAIR:'chair', BED:'bed',
   SHELF:'bookshelf', MUD:'mud', BOG:'bog water', REEDS:'reeds', DEADTREE:'dead tree', SNOW:'snow', ROCK:'mountain rock',
-  PINE:'pine', BASALT:'basalt', CAVE:'cave floor', LAVA:'lava', OBSIDIAN:'obsidian', VENT:'steam vent'};
+  PINE:'pine', BASALT:'basalt', CAVE:'cave floor', LAVA:'lava', OBSIDIAN:'obsidian', VENT:'steam vent',
+  SECRET:'odd wall', RUBBLE:'rubble', ALTAR:'forgotten altar', ALTARSPENT:'quiet altar'};
 
 // =====================================================================
 //  Zones
@@ -257,7 +263,42 @@ function buildWorld(){
   scatter(93, 33, 118, 58, 2, caveOk, (x, y) => items.push({x, y, kind:'potion'}));
   scatter(93, 33, 118, 58, 2, caveOk, (x, y) => items.push({x, y, kind:'gold'}));
 
-  return {spawns, items, npc:[89, 11], start:[5, 5]};
+  // ---------------- secret shrines: a few odd walls, each hiding a forgotten god ----------------
+  const SOLID = {WALL:1, ROCK:1, BASALT:1}, altars = [], used = [];
+  const shrine = (z, floorT, deity, loot) => {
+    // a 3-wide, 2-deep chamber behind one odd stone in an ordinary wall
+    const cands = [];
+    for (let y = 1; y < MH - 1; y++) for (let x = 1; x < MW - 1; x++) {
+      if (zone[idx(x, y)] !== z || !SOLID[get(x, y)] || used.some(([ux, uy]) => Math.abs(ux - x) < 14 && Math.abs(uy - y) < 14)) continue;
+      for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+        const ot = get(x - dx, y - dy);
+        if (!inb(x - dx, y - dy) || TD[ot].block || TD[ot].water || zone[idx(x - dx, y - dy)] !== z) continue;
+        const px = -dy, py = dx; let ok = true;
+        for (let k = 0; k <= 3 && ok; k++) for (let sd = -2; sd <= 2; sd++) {
+          const tx = x + dx * k + px * sd, ty = y + dy * k + py * sd;
+          if (!inb(tx, ty) || border(tx, ty) || !SOLID[get(tx, ty)] || zone[idx(tx, ty)] !== z) { ok = false; break; }
+        }
+        if (ok) cands.push([x, y, dx, dy]);
+      }
+    }
+    if (!cands.length) return false;
+    const [x, y, dx, dy] = cands[Math.floor(R() * cands.length)], px = -dy, py = dx;
+    const at = (k, sd) => [x + dx * k + px * sd, y + dy * k + py * sd];
+    for (let k = 1; k <= 2; k++) for (let sd = -1; sd <= 1; sd++) set(...at(k, sd), floorT);
+    set(x, y, 'SECRET');
+    const [ax, ay] = at(2, 0); set(ax, ay, 'ALTAR'); altars.push({x:ax, y:ay, deity});
+    set(...at(2, 1), 'CHEST');
+    { const [gx, gy] = at(2, -1); items.push({x:gx, y:gy, kind:'gold'}); }
+    { const [lx, ly] = at(1, 1); items.push({x:lx, y:ly, kind:loot}); }
+    used.push([x, y]);
+    return true;
+  };
+  shrine(Z.CELLAR, 'FLOOR', 'vessa', 'scroll');
+  if (!shrine(Z.MIRE, 'MUD', 'gloam', 'potion')) shrine(Z.CELLAR, 'FLOOR', 'gloam', 'potion');
+  shrine(Z.PASS, 'FLOOR', 'quillow', 'potion');
+  shrine(Z.DEEPS, 'CAVE', 'hrask', 'scroll');
+
+  return {spawns, items, altars, npc:[89, 11], start:[5, 5]};
 }
 
 const ITEMS = {

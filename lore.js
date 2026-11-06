@@ -174,10 +174,57 @@ tiles: {
     "Obsidian, black glass born from frozen lava. Somebody hit liquid fire with ice and made a bridge. That's either the bravest thing I've ever seen or the dumbest. In my experience it's usually both.",
     "A glassy black floor still crackling with heat from underneath. You can see your reflection in it. You look terrible. You look magnificent. You look like someone who got here.",
   ],
+  SECRET: [
+    "Now hold on. This stretch of wall is WRONG. Different stone, a dusky violet the rest of the place never heard of, and the mortar is newer, or older, or from somewhere else entirely. A draught is coming through the cracks. Walls don't breathe. This one does. Give it a shove.",
+    "This is not like the other walls. I want to be very clear about that, because I've been staring at walls for hours and I know them now, I know their moods, and this one is LYING. Odd colour, hollow sound when you knock, faint warm air leaking out. Something is behind it. Push.",
+    "A wall that is trying very hard to look like a wall and failing on every count: the wrong colour, the wrong temperature, a seam running round it like a door that forgot what it was. I have a nose for secrets. This one stinks of them.",
+  ],
+  RUBBLE: [
+    "Rubble, where the odd wall used to be. Broken violet stone and old dust and a smell like incense and closed-up centuries. You did this. You pushed and the world gave way. Remember that feeling.",
+    "A heap of shattered secret masonry. Somebody bricked this place up a very long time ago, for reasons, and now the reasons are in pieces on the floor.",
+  ],
+  ALTAR: [
+    "An altar, glowing faintly, to a god nobody remembers. Candle stubs. Offerings rotted to nothing. Words carved in a language I'm sure I've dreamt in. Somebody loved this god once, deeply, and then everybody stopped. And the god kept the light on anyway.",
+  ],
+  ALTARSPENT: [
+    "The altar's quiet now. Its light is gone, spent on you, which may have been the last thing it had. That's a strange kind of gift to carry around. Carry it well.",
+  ],
   VENT: [
     "A steam vent, hissing like an angry radiator in a cheap motel, spitting scalding fog at the ceiling. The earth's pressure valve. Nobody here knows what happens if it's ever shut off. Nobody wants to.",
     "A crack in the world exhaling boiling breath. Every few seconds it sighs, very loudly, like a man who has just been asked to explain himself and cannot.",
   ],
+},
+
+// the forgotten gods behind the odd walls
+deities: {
+  vessa: {name:'Vessa', title:'Keeper of Small Lamps', col:[1,.82,.45],
+    gonzo:[
+      "An altar to VESSA, KEEPER OF SMALL LAMPS, goddess of the candle in the window, the porch light left on, the torch carried home. Her shrine is ringed with a hundred tiny clay lamps, all cold, all patient. One is still lit. I don't know who lit it. I don't want to know. I want to kneel.",
+      "Vessa's altar. The carvings show a woman holding a lamp to the face of a frightened traveller, and the traveller is smiling, and the stone is worn smooth right there, on the smile, where thousands of thumbs have touched it for luck.",
+    ],
+    prayer:'A warm light opens behind your eyes, like a lamp lit in an upstairs window. Vessa remembers you.', boon:'Max MP +5.',
+    gift:'mp'},
+  gloam: {name:'Gloam', title:'Mother of Damp Places', col:[.55,1,.7],
+    gonzo:[
+      "An altar to GLOAM, MOTHER OF DAMP PLACES, patron of moss and puddles and the slow green things that grow where nobody looks. Her idol is a fat stone frog with a crown of mushrooms and the expression of a woman who has seen it all and forgiven most of it. Moisture beads on her like sweat. She is listening.",
+      "Gloam's shrine smells of rain on old rope. The offering bowl is full of pebbles, each one painted with a tiny careful frog. Children left these, centuries ago. The paint hasn't faded. Not one bit. Think about that.",
+    ],
+    prayer:'Something cool and green and patient settles into your bones. Gloam holds you a moment, like a stone holds water.', boon:'Max HP +3, max MP +3.',
+    gift:'both'},
+  quillow: {name:'Saint Quillow', title:'of the Unfinished Sentence', col:[.75,.85,1],
+    gonzo:[
+      "An altar to SAINT QUILLOW OF THE UNFINISHED SENTENCE, patron of people who were interrupted, who meant to say it, who never got the chance. The altar is covered in half-carved words. Every inscription stops in the middle. It is the most honest church I have ever been in.",
+      "Quillow's shrine, high in the cold. Prayers are scratched into the rock, all of them unfinished: 'I always wanted to tell you', 'If I'd only', 'I'm sorry I never'. The saint finishes them, they say. In her own time. Slowly. Kindly.",
+    ],
+    prayer:'A soft voice finishes a sentence you started years ago and never ended. It was the right ending. You stand straighter.', boon:'Armour +1.',
+    gift:'armor'},
+  hrask: {name:'Hrask', title:'Lord of the Lukewarm', col:[1,.55,.35],
+    gonzo:[
+      "An altar to HRASK, LORD OF THE LUKEWARM, a god of moderation in a land of lava, worshipped by exactly one sect of very calm fire-monks who all died of old age, which in the Ember Deeps is a miracle. His idol is a sitting man with a cup of tea at exactly drinking temperature. I'm moved. I'm genuinely moved.",
+      "Hrask's shrine: a cool, quiet pocket in the burning dark, the only place in the Deeps you can breathe without your lungs filing a complaint. The god of not-too-much. Of enough. I have never once in my life practiced his teachings, and I respect him enormously.",
+    ],
+    prayer:'Everything slows to a comfortable simmer. Your magic stops running so hot and starts running steady.', boon:'Spells cost 1 less.',
+    gift:'cost'},
 },
 
 mons: {

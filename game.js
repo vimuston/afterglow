@@ -49,6 +49,7 @@ function init(){
   ents = [player, npc];
   for (const [t, x, y] of W0.spawns) ents.push(mkEnt(t, x, y));
   items = W0.items.map(o => ({...o}));
+  altars = {}; for (const a of W0.altars || []) altars[idx(a.x, a.y)] = a.deity;
   CX = clamp(player.x + .5 - WVW / 2, 0, MW - WVW); CY = clamp(player.y + .5 - WVH / 2, 0, MH - WVH);
 
   log('AFTERGLOW // somewhere, a kettle is on', [.6,1,.7]);
@@ -141,6 +142,7 @@ function rebuildLights(){
       else if (t === 'HEARTH') addLight(x, y, 9, [1,.58,.28], 1.6, 1);
       else if (t === 'LAVA' && hash(i) < .4) addLight(x, y, 4, [1,.38,.1], .7, 2);
       else if (t === 'VENT') addLight(x, y, 3, [1,.5,.2], .6, 2);
+      else if (t === 'ALTAR') { const D = altarDeity(i); addLight(x, y, 6, D ? D.col : [1,.8,.5], 1.3, 1); }
       if (fire[i] > 0) addLight(x, y, 4, [1,.45,.12], .9, 2);
     }
   for (const e of ents) {
@@ -544,6 +546,8 @@ function playerMove([dx, dy]){
   if (e) { attack(P, e); endTurn(); return; }
   const i = idx(nx, ny), key = map[i], d = TD[key];
   const nudge = () => { P.act = {style:'bite', t0:now(), dx:dx * .5, dy:dy * .5, s:dx || 1}; };
+  if (key === 'SECRET') { openSecret(nx, ny, i); nudge(); endTurn(); return; }
+  if (key === 'ALTAR' || key === 'ALTARSPENT') { nudge(); pray(i, nx, ny); endTurn(); return; }
   if (key === 'DOOR') { map[i] = 'OPEN'; nudge(); Snd.door(); log('You open the door.'); endTurn(); return; }
   if (key === 'CHEST') { map[i] = 'CHESTOPEN'; const g = ri(15, 30); state.gold += g; nudge(); Snd.coin(); log(`You open the chest: ${g} gold!`, [1,.85,.3]); endTurn(); return; }
   if (d.block) {
@@ -773,7 +777,7 @@ function travelStep(tn){
   }
   tr.next = tn + 135;
 }
-const HINT = {DEEP:'Too deep to wade. Frost could bridge it.', ICEWALL:'A wall of solid ice. Fire melts it, lightning shatters it.',
+const HINT = {SECRET:'This wall is different from the rest. Walk into it.', ALTAR:'Walk into it to pray.', ALTARSPENT:'Its gift has been given.', DEEP:'Too deep to wade. Frost could bridge it.', ICEWALL:'A wall of solid ice. Fire melts it, lightning shatters it.',
       CRATE:'A wooden crate. Looks flammable.', CHESTOPEN:'An empty chest.', TORCHOUT:'A frozen torch. Fire would relight it.',
       BUSH:'A thick bush. It would burn nicely.', LAVA:'Lava. Even looking at it is warm. Frost would make it a floor.',
       HEARTH:'The kettle sings quietly to itself.', SHELF:'Books on birds, boats, bread, and "Being Brave, Vol. II".',
@@ -829,7 +833,9 @@ function buildInspect(x, y){
       text = gonzoPick(key, G.items[it.kind]); fact = ITEM_FACT[it.kind] || ''; col = ITEMS[it.kind].col.map(v => .5 + v * .5);
     } else {
       const t = map[i]; key = 'tile:' + t; title = capF(TNAME[t] || t);
-      text = gonzoPick(key, G.tiles[t] || ['A thing. Not much to say about it, which in this place is a luxury.']);
+      const D = (t === 'ALTAR' || t === 'ALTARSPENT') ? altarDeity(i) : null;
+      if (D) { title = `Altar of ${D.name}`; sub = D.title + (t === 'ALTARSPENT' ? ' · spent' : ''); col = D.col; }
+      text = gonzoPick(key + (D ? ':' + altars[i] : ''), D && t === 'ALTAR' ? D.gonzo : G.tiles[t] || ['A thing. Not much to say about it, which in this place is a luxury.']);
       fact = HINT[t] || HINT_X[t] || '';
       if (fire[i] > 0) K.push(G.states.tileFire);
       if (snowAcc[i] > .5 && TD[t].snowy) K.push(G.states.snowed);
@@ -919,6 +925,32 @@ function drawInspect(t){
   }
 }
 
+// ---------- secret walls and forgotten gods ----------
+let altars = {};
+const altarDeity = i => GONZO.deities[altars[i]];
+const deityFull = D => D.name + (D.title.startsWith('of ') ? ' ' : ', ') + D.title;
+function openSecret(x, y, i){
+  map[i] = 'RUBBLE'; Snd.slam(); Snd.door(); shake(4);
+  for (let k = 0; k < 14; k++) part(x + (rnd() - .5) * .8, y + (rnd() - .5) * .6, (rnd() - .5) * 3, -rnd() * 2, .6 + rnd() * .6, pick(['.', ',', ':', '\'']), [.7,.55,.8], 3);
+  log('The odd wall grinds aside. Warm, ancient air rolls out.', [.85,.7,1]);
+}
+function pray(i, x, y){
+  const D = altarDeity(i), P = player;
+  if (!D) return;
+  if (map[i] === 'ALTARSPENT') { log(`${D.name}'s altar is quiet now. Its light lives in you.`, [.6,.58,.66]); return; }
+  map[i] = 'ALTARSPENT';
+  if (D.gift === 'mp') { P.maxmp += 5; P.mp = P.maxmp; }
+  else if (D.gift === 'both') { P.maxhp += 3; P.maxmp += 3; P.hp = P.maxhp; P.mp = P.maxmp; }
+  else if (D.gift === 'armor') state.armor = (state.armor || 0) + 1;
+  else if (D.gift === 'cost') state.costDown = (state.costDown || 0) + 1;
+  state.prayed = (state.prayed || 0) + 1;
+  flash(x, y, 7, D.col, 2.2, 1400); Snd.zone(); Snd.potion();
+  for (let k = 0; k < 24; k++) part(x + (rnd() - .5) * .6, y, (rnd() - .5) * 2.5, -1 - rnd() * 2.5, 1.2 + rnd(), pick(['·', '*', '+', '°']), D.col, -.4, k * .03);
+  log(`You kneel before ${deityFull(D)}.`, D.col);
+  log(`${D.name} blesses you: ${D.boon}`, D.col.map(v => v * .9 + .1));
+  inspect = {x:P.x, y:P.y, key:'prayer', title:D.name, sub:D.title + ' · a blessing', text:D.prayer, fact:D.boon, col:D.col, t0:now(), turn:state.turn + 1};
+  Snd.page();
+}
 function describe(x, y){
   const i = idx(x, y);
   if (!seen[i]) return null;
@@ -1038,6 +1070,10 @@ function drawTiles(t, tn){
       r = g = b = 0; em = .85 + .35*f; cr = 1; cg = .5 + .3*f; cb = .18; oy = -f*.8;
       if (rnd() < .07) ember(x, y - .3);
     } else if (key === 'WINDOW') { em = .3 + .1 * flick(t, 9); cr = 1; cg = .78; cb = .4; }
+    else if (key === 'ALTAR') { const D = altarDeity(i), c = D ? D.col : [1,.8,.5], p = .5 + .5 * Math.sin(t * 2.1 + h * 9);
+      r = g = b = 0; em = .8 + .4 * p; cr = .6 + .4 * c[0]; cg = .6 + .4 * c[1]; cb = .6 + .4 * c[2]; oy = -p * 1.2;
+      if (rnd() < .06) part(x + (rnd() - .5) * .6, y - .2, (rnd() - .5) * .3, -.5 - rnd() * .5, 1.4, pick(['·', '°', '*']), c, -.15); }
+    else if (key === 'SECRET') { const s = (t * .19 + h * 7) % 1; em = .06 + (s < .04 ? .5 * (1 - s / .04) : 0) + .04 * Math.sin(t * 1.3 + h * 20); }
     else if (key === 'VENT') { const f = flick(t * 1.5, h * 30); r = g = b = 0; em = .5 + .4 * f; if (rnd() < .05) steam(x, y - .2); }
     else if (key === 'OBSIDIAN') { const s = (t * .2 + h * 5) % 1; if (s < .03) { em += .8 * (1 - s / .03); } em += .04; }
     else if (key === 'ICE' || key === 'ICEWALL') {
@@ -1362,6 +1398,42 @@ function drawScene(t, tn, dt){
   Dialog.draw(t);
   drawHUD(t);
   drawInspect(t);
+  drawSplash(t);
+}
+
+// ---------- startup splash ----------
+let splash = true, splashT = 1, splashOff = 0;
+function drawSplash(t){
+  if (!splash) { if (!splashT) return; if (!splashOff) splashOff = now(); splashT = Math.max(0, 1 - (now() - splashOff) / 350); if (!splashT) return; }
+  const a = splashT, cx = VW / 2;
+  ctx.globalAlpha = a * .82; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, SW, SH); ctx.globalAlpha = a;
+  const bw = 50, bx = Math.floor(cx - bw / 2), by = 7, bh = 18, fc = [.3,.5,.38];
+  ctx.fillStyle = 'rgba(2,4,3,.95)'; ctx.fillRect(bx * TW + TW * .5, by * TH + TH * .5, (bw - 1) * TW, (bh - 1) * TH);
+  scrText(bx, by, '╔' + '═'.repeat(bw - 2) + '╗', fc);
+  for (let r = by + 1; r < by + bh - 1; r++) { scrText(bx, r, '║', fc); scrText(bx + bw - 1, r, '║', fc); }
+  scrText(bx, by + bh - 1, '╚' + '═'.repeat(bw - 2) + '╝', fc);
+  // title, in big glowing letters that breathe
+  ctx.save(); ctx.font = 'bold 46px "DejaVu Sans Mono", Menlo, Consolas, monospace';
+  const title = 'AFTERGLOW', g = .85 + .15 * Math.sin(t * 2.2);
+  for (let k = 0; k < title.length; k++) {
+    const x = SW / 2 + (k - (title.length - 1) / 2) * 34, y = (by + 2.6) * TH + Math.sin(t * 2 + k * .7) * 2.5;
+    ctx.fillStyle = css(1 * g, .78 * g, .45 * g); ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 2;
+    ctx.strokeText(title[k], x, y); ctx.fillText(title[k], x, y);
+  }
+  ctx.restore();
+  const line = (row, key, what, kc = [.95,.85,.55]) => { scrText(bx + 4, row, key, kc); scrText(bx + 19, row, what, [.78,.86,.8]); };
+  const tag = 'somewhere, a kettle is on';
+  scrText(Math.floor(cx - tag.length / 2), by + 4, tag, [.45,.6,.5]);
+  line(by + 7,  'left-click',  'move · attack · talk');
+  line(by + 8,  'right-click', 'inspect anything');
+  line(by + 9,  'WASD',        'move (Q E Z C diagonals)');
+  line(by + 10, 'numpad',      'move');
+  line(by + 11, 'vi-keys',     'move (hjkl yubn)');
+  line(by + 13, '1  2  3',     'lightning · fire · frost', [.7,.85,1]);
+  line(by + 14, 'space',       'wait  ·  M sound');
+  const pr = '~ press any key or click ~';
+  if (Math.sin(t * 3.5) > -.3) scrText(Math.floor(cx - pr.length / 2), by + bh - 2, pr, [.6,.95,.7]);
+  ctx.globalAlpha = 1;
 }
 
 // =====================================================================
@@ -1375,6 +1447,7 @@ const NUMPAD = {Numpad8:[0,-1], Numpad2:[0,1], Numpad4:[-1,0], Numpad6:[1,0], Nu
 addEventListener('keydown', ev => {
   Snd.start();
   if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  if (splash) { if (!['Shift','Control','Alt','Meta'].includes(ev.key)) { splash = false; Snd.page(); } ev.preventDefault(); return; }
   if (dlg) { Dialog.key(ev); return; }
   if (inspect) { inspect = null; if (ev.key === 'Escape') return; }
   const k = ev.key.length === 1 ? ev.key.toLowerCase() : ev.key;
@@ -1406,6 +1479,7 @@ out.addEventListener('mouseleave', () => { hover = null; hoverAny = null; });
 out.addEventListener('mousedown', ev => {
   ev.preventDefault();
   Snd.start();
+  if (splash) { splash = false; Snd.page(); return; }
   if (dlg) { if (ev.button === 0 && hoverAny) Dialog.click(hoverAny[0], hoverAny[1]); return; }
   if (ev.button === 2) {
     if (state.targeting) { Snd.cancel(); log('Cancelled.', [.5,.6,.5]); state.targeting = null; return; }
