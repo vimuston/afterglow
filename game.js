@@ -813,7 +813,8 @@ function buildInspect(x, y){
     if (e.isPlayer) {
       const kind = state.belief ? 'playerBelief' : e.hp < e.maxhp * .4 ? 'playerHurt' : 'player';
       key = 'player'; title = state.mem.name ? `${state.mem.name} (you)` : 'You';
-      text = gonzoPick(kind, G[kind]);
+      text = e.burning > 0 ? condText('pl:burn', G.burningPlayer) : e.frozen > 0 ? condText('pl:frozen', G.frozenPlayer) : gonzoPick(kind, G[kind]);
+      if (e.burning > 0) title += ', on fire'; else if (e.frozen > 0) title += ', frozen';
       sub = `${Math.max(0, e.hp)}/${e.maxhp} HP · ${e.mp}/${e.maxmp} MP` + (state.armor ? ` · armour ${state.armor}` : '');
       col = [1,.95,.75];
     } else if (e.npc) {
@@ -822,12 +823,13 @@ function buildInspect(x, y){
       text = gonzoPick(kind, G[kind]);
       fact = 'Walk into him to talk.'; col = [.9,.85,1];
     } else {
-      key = 'mon:' + e.type; title = capF(e.name);
-      text = gonzoPick(key, G.mons[e.type] || ['Something with teeth. I could not get a good look at it and I did not try very hard.']);
-      const d = describe(x, y) || ''; sub = d.slice(e.name.length + 1).replace(/^(\d+\/\d+)/, '$1 HP');
+      const cn = condName(e);
+      key = 'mon:' + e.type + (e.burning > 0 ? ':burn' : e.frozen > 0 ? ':frozen' : ''); title = capF(cn);
+      text = e.burning > 0 ? condText('mon:burn', G.burningMon, e.name) : e.frozen > 0 ? condText('mon:frozen', G.frozenMon, e.name)
+        : gonzoPick(key, G.mons[e.type] || ['Something with teeth. I could not get a good look at it and I did not try very hard.']);
+      const d = describe(x, y) || ''; sub = d.slice(cn.length + 1).replace(/^(\d+\/\d+)/, '$1 HP');
       if (/^big /.test(e.name)) K.push(G.states.big); else if (/^scrawny /.test(e.name)) K.push(G.states.scrawny);
-      if (e.burning) K.push(G.states.burning); else if (e.frozen) K.push(G.states.frozen);
-      else if (e.hp < e.maxhp * .5) K.push(G.states.hurt);
+      if (!e.burning && !e.frozen && e.hp < e.maxhp * .5) K.push(G.states.hurt);
       if (TD[map[i]].water && !(MONS[e.type].immune || {}).shock) K.push(G.states.inWater);
       col = e.col.map(v => .45 + v * .55);
     }
@@ -842,7 +844,7 @@ function buildInspect(x, y){
       if (D) { title = `Altar of ${D.name}`; sub = D.title + (t === 'ALTARSPENT' ? ' · spent' : ''); col = D.col; }
       text = gonzoPick(key + (D ? ':' + altars[i] : ''), D && t === 'ALTAR' ? D.gonzo : G.tiles[t] || ['A thing. Not much to say about it, which in this place is a luxury.']);
       fact = HINT[t] || HINT_X[t] || '';
-      if (fire[i] > 0) K.push(G.states.tileFire);
+      if (fire[i] > 0 && vis[i]) { key += ':burn'; title = 'Burning ' + (TNAME[t] || t); text = condText('tile:burn', G.burningTile, TNAME[t] || t); fact = TD[t].block ? 'On fire. Soon it will be ash.' : 'On fire. Standing in it sets you alight.'; }
       if (snowAcc[i] > .5 && TD[t].snowy) K.push(G.states.snowed);
       if (!vis[i]) K.push(G.states.remembered);
     }
@@ -963,21 +965,24 @@ function pray(i, x, y){
   inspect = {x:P.x, y:P.y, key:'prayer', title:D.name, sub:D.title + ' · a blessing', text:D.prayer, fact:D.boon, col:D.col, t0:now(), turn:state.turn + 1};
   Snd.page();
 }
+// name with its condition up front: 'burning goblin', 'frozen giant leech'
+const condName = e => (e.burning > 0 ? 'burning ' : e.frozen > 0 ? 'frozen ' : '') + e.name;
+const condText = (key, arr, it) => gonzoPick(key, arr).replace(/\{it\}/g, it);
 function describe(x, y){
   const i = idx(x, y);
   if (!seen[i]) return null;
   const e = entAt(x, y);
   if (e && (e.isPlayer || canSee(e))) {
-    if (e.isPlayer) return state.belief ? 'you (you believe in yourself)' : 'you';
+    if (e.isPlayer) return (e.burning > 0 ? 'you, on fire' : e.frozen > 0 ? 'you, frozen' : 'you') + (state.belief ? ' (you believe in yourself)' : '');
     if (e.npc) return state.mem.knowsName ? 'Eli, the old man' : 'an old man';
     const D = MONS[e.type], tags = [];
     if (D.immune?.burn) tags.push('fireproof'); if (D.immune?.frost) tags.push('frostproof'); if (D.immune?.shock) tags.push('shockproof');
     if (D.weak?.burn) tags.push('hates fire'); if (D.weak?.frost) tags.push('hates frost'); if (D.regen) tags.push('regenerates');
-    return `${e.name} ${Math.max(0, e.hp)}/${e.maxhp}` + (e.frozen ? ' frozen' : '') + (e.burning ? ' burning' : '') + (tags.length ? ' · ' + tags.join(', ') : '');
+    return `${condName(e)} ${Math.max(0, e.hp)}/${e.maxhp}` + (tags.length ? ' · ' + tags.join(', ') : '');
   }
   const it = items.find(o => o.x === x && o.y === y);
   if (it && vis[i]) return ITEMS[it.kind].name;
-  return TNAME[map[i]] + (fire[i] > 0 ? ' (burning)' : '') + (snowAcc[i] > .5 && TD[map[i]].snowy ? ', under snow' : '') + (vis[i] ? '' : ' (remembered)');
+  return (fire[i] > 0 && vis[i] ? 'burning ' : '') + TNAME[map[i]] + (snowAcc[i] > .5 && TD[map[i]].snowy ? ', under snow' : '') + (vis[i] ? '' : ' (remembered)');
 }
 
 // =====================================================================
@@ -1294,6 +1299,9 @@ function updateWeather(t, dt){
     for (let k = 0; k < ri(3, 6); k++) parts.push({x:x - dir * k * .9, y:y + (k % 2) * .6 + rnd() * .3, vx:dir * (4 + rnd()), vy:(rnd() - .5) * .3, life:20, max:20, ch:'v', col:[.3,.35,.4], g:0, d:0, bird:1});
   }
 }
+// weather only shows where you can actually see: in line of sight, and lit (or close)
+const wSee = (x, y) => { const tx = clamp(Math.floor(x), 0, MW - 1), ty = clamp(Math.floor(y), 0, MH - 1), i = idx(tx, ty);
+  return vis[i] && (lumS[i] > .05 || Math.max(Math.abs(tx - player.x), Math.abs(ty - player.y)) <= 5); };
 function drawWeather(t, dt){
   // rain as one batched stroke
   ctx.strokeStyle = 'rgba(160,185,255,.5)'; ctx.lineWidth = 1.2; ctx.beginPath();
@@ -1302,16 +1310,17 @@ function drawWeather(t, dt){
     p.life -= dt; p.x += (p.vx + (p.k ? Math.sin(t * 1.5 + p.ph) * .8 : 0)) * dt; p.y += p.vy * dt;
     const i = idx(clamp(Math.floor(p.x), 0, MW - 1), clamp(Math.floor(p.y), 0, MH - 1));
     if (!ZONES[zone[i]].outdoor) continue;
-    if (p.life <= 0) { if (!p.k && rnd() < .35 && seen[i]) part(p.x, p.y, (rnd() - .5) * 2, -1.5, .18, '.', [.6,.7,.95], 10); continue; }
+    if (p.life <= 0) { if (!p.k && rnd() < .35 && wSee(p.x, p.y)) part(p.x, p.y, (rnd() - .5) * 2, -1.5, .18, '.', [.6,.7,.95], 10); continue; }
     keep.push(p);
-    if (!p.k) { ctx.moveTo(sx(p.x), sy(p.y)); ctx.lineTo(sx(p.x - p.vx * .025), sy(p.y - p.vy * .025)); }
+    if (!p.k && wSee(p.x, p.y)) { ctx.moveTo(sx(p.x), sy(p.y)); ctx.lineTo(sx(p.x - p.vx * .025), sy(p.y - p.vy * .025)); }
   }
   ctx.stroke(); ctx.lineWidth = 1.3;
   wparts = keep;
   ctx.font = PFONT; ctx.fillStyle = 'rgb(235,240,255)';
-  for (const p of wparts) if (p.k) { ctx.globalAlpha = Math.min(1, p.life) * .85; ctx.fillText(p.ph > 4.5 ? '*' : '·', sx(p.x), sy(p.y)); }
+  for (const p of wparts) if (p.k && wSee(p.x, p.y)) { ctx.globalAlpha = Math.min(1, p.life) * .85; ctx.fillText(p.ph > 4.5 ? '*' : '·', sx(p.x), sy(p.y)); }
   ctx.globalAlpha = 1;
   for (const f of flies) {
+    if (!wSee(f.x, f.y)) continue;
     const a = .5 + .5 * Math.sin(t * 3 + f.ph); ctx.globalAlpha = .4 + .6 * a;
     ctx.fillStyle = css(.85 + .15 * a, 1, .4); ctx.fillText('•', sx(f.x), sy(f.y));
   }

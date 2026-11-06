@@ -331,6 +331,36 @@ manNamed: [
 ],
 
 // little kicker lines tacked on for current conditions
+// when something is burning or frozen, its own description gives way to these. {it} is its name.
+burningMon: [
+  "The {it} is ON FIRE. Not a little. Completely. It runs in tight panicked circles, trailing smoke and opinions, howling a long high note I last heard from a Chevrolet losing a transmission on the Vegas strip. I would help, but I started it.",
+  "Pure liquid chaos: the {it} has become a torch with legs. Fat sparks pop off it like campaign promises. The smell is hair and regret. Somewhere a fire marshal is weeping into his clipboard.",
+  "Look at the {it} go. Burning bright, burning fast, burning with the frantic dignity of a man who has just realised the hotel is on fire and he is the hotel. This is the most alive it has ever been.",
+  "The {it} is going up like a dry Kentucky barn. Every few seconds it pauses, as if to reconsider its whole career, and then it remembers it's on fire and screams again.",
+  "Flames all over the {it}, licking up its back, turning its eyes into two little lamps of total animal panic. Bat Country. We are deep in Bat Country now and it's burning.",
+],
+frozenMon: [
+  "The {it} has been frozen solid, a perfect blue statue of its own worst intentions. Its eyes still move. They follow you. Inside that ice is a creature composing a long, furious letter to its congressman.",
+  "Ice. The whole {it}, sealed up in a glassy coffin, mid-snarl, like a trophy some mad Alaskan taxidermist left out on the porch. Frost crackles off it. It cannot move, and it is taking this very personally.",
+  "A frozen {it}, rimed white, creaking quietly like an old ship. You could tap on it. You could write your name in the frost on its face. I recommend you don't. It's thawing. It's remembering.",
+  "The {it} stands locked in a block of cold blue nothing, breath stopped in a little cloud before its teeth. A museum piece. Exhibit A in the case against walking toward a man holding frost.",
+  "Frozen stiff, the {it}. Absolutely still for the first time in its wretched life. There's something peaceful about it, the way there's something peaceful about a parked car with its engine about to explode.",
+],
+burningPlayer: [
+  "YOU ARE ON FIRE. This is not a metaphor. Smoke is coming off your sleeves and your hair is making a sound like bacon. Find water. Find rain. Stop reading this and MOVE.",
+  "Flames up both arms, the smell of yourself cooking, and somewhere behind your eyes a calm little voice saying 'well, this is new.' The voice is not helping. Water. Now.",
+  "You've become the light source. Congratulations. Every monster in the valley can see you coming and the skin on the back of your neck is filing for divorce. Put yourself out.",
+],
+frozenPlayer: [
+  "You are frozen solid. Your thoughts move like syrup in January. Somewhere very far away, your fingers are filing a complaint.",
+  "Ice to the elbows, ice in the eyelashes. You are a sculpture titled 'Poor Decisions, Winter'. Wait. Breathe. It'll pass.",
+],
+burningTile: [
+  "The {it} is burning, cheerfully, viciously, crackling away like it has waited its whole life for this. Heat rolls off it in waves you can see. Do not stand there. I mean it.",
+  "Fire has the {it} now. Orange teeth, black smoke, little embers drifting off like drunk fireflies looking for something else to ruin. Give it a few turns and it will be ash and a story.",
+  "A burning {it}: the most honest thing in the valley. It doesn't pretend. It just burns, and spits sparks at everything nearby, and dares the wind to make it worse. The wind usually does.",
+  "Flames all through the {it}, roaring like a crowd that just saw somebody fall off a stage. The air above it wobbles. Your eyebrows feel threatened from here.",
+],
 states: {
   burning:  "AND IT IS ON FIRE. Flames everywhere, screaming, the smell of singed fur. The whole scene has gone full Bat Country.",
   frozen:   "Currently frozen solid, a statue of its own bad intentions, quietly furious inside a block of ice.",
