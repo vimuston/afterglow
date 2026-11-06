@@ -752,7 +752,7 @@ function mouseGo(tx, ty){
   if (tx === P.x && ty === P.y) { endTurn(); return; }
   const e = entAt(tx, ty), target = e && !e.isPlayer && canSee(e) ? e : null;
   if (!target && !seen[idx(tx, ty)] && Math.max(Math.abs(tx - P.x), Math.abs(ty - P.y)) > 1) { log("You don't know what's there.", [.55,.65,.55]); return; }
-  state.travel = {tx, ty, target, known:new Set(visibleMonsters()), next:0};
+  state.travel = {tx, ty, target, cautious:visibleMonsters().length > 0, next:0};
   travelStep(now());
 }
 function travelStep(tn){
@@ -772,8 +772,11 @@ function travelStep(tn){
   playerMove([step[0] - P.x, step[1] - P.y]);
   if (!state.travel) return;
   if (state.turn === turn || state.dead || state.won || (final && tr.target) || dlg) { state.travel = null; return; }
-  for (const m of visibleMonsters()) if (!tr.known.has(m) && m !== tr.target) {
-    log(`You spot a ${m.name}.`, [1,.8,.5]); Snd.alert(); state.travel = null; return;
+  // with monsters in sight, every click is a single careful step
+  if (tr.cautious) { state.travel = null; return; }
+  const seenNow = visibleMonsters();
+  if (seenNow.length) {
+    log(`You spot ${seenNow.length > 1 ? 'monsters' : 'a ' + seenNow[0].name}. You slow down.`, [1,.8,.5]); Snd.alert(); state.travel = null; return;
   }
   tr.next = tn + 135;
 }
@@ -881,7 +884,8 @@ function inspectLayout(){
   if (!I.lines) { I.lines = wrap(I.text, INS_W - 4); I.flines = I.fact ? wrap(I.fact, INS_W - 4) : []; I.total = I.text.length; }
   const H = 3 + (I.sub ? 1 : 0) + I.lines.length + (I.flines.length ? 1 + I.flines.length : 0);
   let px, py;
-  if (I.hud) { px = clamp(I.hx - 6, 0, VW - INS_W); py = VH - H; }
+  if (I.confirm) { px = Math.round((VW - INS_W) / 2); py = Math.max(0, Math.round((VH - H) / 2) - 2); }
+  else if (I.hud) { px = clamp(I.hx - 6, 0, VW - INS_W); py = VH - H; }
   else {
     const ax = (I.x - CXr + .5) * ZOOM, ay = (I.y - CYr + .5) * ZOOM;
     if (ax + 1.6 + INS_W <= VW) { px = Math.round(ax + 1.6); py = clamp(Math.round(ay - H / 2), 0, Math.max(0, VH - H)); }
@@ -893,10 +897,16 @@ function inspectLayout(){
   }
   return {px, py, H};
 }
+function askRestart(){
+  state.travel = null; state.targeting = null;
+  inspect = {confirm:true, key:'restart', title:'BEGIN AGAIN?', sub:'restart the run · everything is lost',
+    text:gonzoPick('restart', GONZO.restart), col:[1,.55,.4], t0:now(), turn:state.turn};
+  Snd.page();
+}
 let inspLastC = 0;
 function drawInspect(t){
   const I = inspect; if (!I) return;
-  if (I.turn !== state.turn || dlg) { inspect = null; return; }
+  if ((!I.confirm && I.turn !== state.turn) || dlg) { inspect = null; return; }
   const {px, py, H} = inspectLayout();
   const fc = I.col.map(v => v * .55), n = Math.floor((now() - I.t0) * .16);
   ctx.fillStyle = 'rgba(2,3,3,.94)'; ctx.fillRect(px * TW + TW * .5, py * TH + TH * .5, (INS_W - 1) * TW, (H - 1) * TH);
@@ -919,7 +929,7 @@ function drawInspect(t){
   inspLastC = n;
   if (n >= I.total) {
     if (I.flines.length) { row++; for (const ln of I.flines) { scrText(px + 2, row, ln, [.45,.75,.55]); row++; } }
-    const foot = ' right-click: more ';
+    const foot = I.confirm ? ' [Y] yes  ·  any other key: no ' : ' right-click: more ';
     ctx.fillStyle = 'rgb(2,3,3)'; ctx.fillRect((px + INS_W - 2 - foot.length) * TW, (py + H - 1) * TH, foot.length * TW, TH);
     scrText(px + INS_W - 2 - foot.length, py + H - 1, foot, fc.map(v => v * .8));
   }
@@ -1320,7 +1330,7 @@ function drawCursor(t){
   const [x, y] = hover, P = player;
   if (!state.targeting && !state.travel && seen[idx(x, y)] && !(x === P.x && y === P.y)) {
     const path = Math.max(Math.abs(x - P.x), Math.abs(y - P.y)) === 1 ? [[x, y]] : findPath(P.x, P.y, x, y);
-    if (path) path.slice(0, -1).forEach(([px, py]) => glyph('·', px, py, .25, .55, .3, 0, -TH*.32));
+    if (path) path.slice(0, visibleMonsters().length ? Math.min(1, path.length - 1) : -1).forEach(([px, py]) => glyph('·', px, py, .25, .55, .3, 0, -TH*.32));
   }
   const pulse = .55 + .25*Math.sin(t*6);
   const col = state.targeting ? SPELLS[state.targeting].col : [.4, 1, .55];
@@ -1449,10 +1459,16 @@ addEventListener('keydown', ev => {
   if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
   if (splash) { if (!['Shift','Control','Alt','Meta'].includes(ev.key)) { splash = false; Snd.page(); } ev.preventDefault(); return; }
   if (dlg) { Dialog.key(ev); return; }
-  if (inspect) { inspect = null; if (ev.key === 'Escape') return; }
   const k = ev.key.length === 1 ? ev.key.toLowerCase() : ev.key;
   if (k === 'm') { Snd.cycle(); return; }
-  if (k === 'r') { init(); return; }
+  if (inspect && inspect.confirm) {
+    ev.preventDefault();
+    if (k === 'y' || k === 'Enter') { inspect = null; Snd.cancel(); init(); }
+    else { inspect = null; Snd.cancel(); }
+    return;
+  }
+  if (inspect) { inspect = null; if (ev.key === 'Escape') return; }
+  if (k === 'r') { if (state.dead || state.won) init(); else askRestart(); return; }
   const dir = NUMPAD[ev.code] || DIRS[k];
   if (state.travel) { state.travel = null; if (dir || k === ' ') ev.preventDefault(); return; }
   if (dir || k === ' ') ev.preventDefault();

@@ -377,4 +377,16 @@ hud: {
     "Where you are and what the sky's doing about it. Weather moves on its own clock. Rain becomes snow on the pass. The cellars and the deeps have no sky at all, which is its own kind of weather.",
   ],
 },
+  restart: [
+    "You want to burn it all down and start over. Every step, every scar, every hard-won torch, gone like a bar tab in a fire. The world will forget you instantly. The old man will set two bowls anyway. Are you sure? Be sure. Sureness is the only drug they can't take from you.",
+    "This is the big red button, friend. Push it and the whole cursed valley folds up like a cheap motel bed and you wake up in the cellar with nothing but your teeth and a vague sense of déjà vu. I have pushed this button. I am not proud. Are you sure?",
+    "Reality is negotiable, but the terms are bad. You hand over everything you've got and in return you get a fresh, clean, idiotic beginning. The goblins will not remember you. That's the worst part. Do it?",
+    "Somewhere a kettle is on, and you want to pour it out and fill it again from scratch. That's madness. That's also the only honest thing a person can do at 4 a.m. Restart the whole sorry business?",
+    "WARNING: the management is not responsible for lost gold, lost blessings, or the small part of your soul that grew attached to that one torch. Once you go back, there is no going forward. Confirm the purge?",
+    "I've seen men do this. Good men. Their eyes went flat and they whispered 'one more run' and they were never seen again, except constantly, in the cellar, at the start. Is that who you want to be? Fine. It's who we all are. Sure?",
+    "You are about to murder this timeline. Not maim it. Murder it. Cold, clinical, a single keystroke. The deities you prayed to will look at each other and shrug. The leech will keep wiggling, but for someone else. Go on?",
+    "There is a voice in the back of your skull saying 'I could do it better.' That voice is a liar and a scoundrel, and it is also, statistically, occasionally right. Listen to the voice?",
+    "Start over? From the top? The damp stone, the first goblin, the slow dawning horror of the mire? Fine. The road is long but it is the same road, and you know where the bad parts are now. That's called wisdom. Or a habit. Sure?",
+    "Every run ends. Most of them end in screaming. This one would end in a quiet, deliberate click, which is somehow worse. The valley holds its breath. The weather pauses mid-gust. Well? Are you sure?",
+  ],
 };
