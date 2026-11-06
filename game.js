@@ -933,9 +933,11 @@ function drawInspect(t){
   inspLastC = n;
   if (n >= I.total) {
     if (I.flines.length) { row++; for (const ln of I.flines) { scrText(px + 2, row, ln, [.45,.75,.55]); row++; } }
-    const foot = I.confirm ? ' [Y] yes  ·  any other key: no ' : ' right-click: more ';
-    ctx.fillStyle = 'rgb(2,3,3)'; ctx.fillRect((px + INS_W - 2 - foot.length) * TW, (py + H - 1) * TH, foot.length * TW, TH);
-    scrText(px + INS_W - 2 - foot.length, py + H - 1, foot, fc.map(v => v * .8));
+    const foot = I.confirm ? ' [Y] yes  ·  any other key: no ' : '';
+    if (foot) {
+      ctx.fillStyle = 'rgb(2,3,3)'; ctx.fillRect((px + INS_W - 2 - foot.length) * TW, (py + H - 1) * TH, foot.length * TW, TH);
+      scrText(px + INS_W - 2 - foot.length, py + H - 1, foot, fc.map(v => v * .8));
+    }
   }
 }
 
