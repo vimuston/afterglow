@@ -772,6 +772,8 @@ function travelStep(tn){
   playerMove([step[0] - P.x, step[1] - P.y]);
   if (!state.travel) return;
   if (state.turn === turn || state.dead || state.won || (final && tr.target) || dlg) { state.travel = null; return; }
+  // bumped something solid at the destination (altar, chest...): that was the point, don't keep bumping it
+  if (final && (P.x !== tr.tx || P.y !== tr.ty) && TD[map[idx(tr.tx, tr.ty)]].block) { state.travel = null; return; }
   // with monsters in sight, every click is a single careful step
   if (tr.cautious) { state.travel = null; return; }
   const seenNow = visibleMonsters();
@@ -1374,7 +1376,7 @@ function drawHUD(t){
   const hv = hoverAny && hoverAny[1] === VH + 2 ? hoverAny[0] : -1;
   for (const k of ['1','2','3']) {
     const sp = SPELLS[k], sel = state.targeting === k, ok = P.mp >= cost(k);
-    const label = `${sel?'>':'['}${k}${sel?'<':']'} ${sp.name} ${cost(k)}`;
+    const label = `${sel?'>':'['}${k}${sel?'<':']'} ${sp.name}`;
     const over = hv >= c && hv < c + label.length;
     const m = sel ? .75 + .35*Math.sin(t*10) : over ? 1.25 : ok ? .8 : .3;
     spellBtns.push({k, c0:c, c1:c + label.length});
