@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AFTERGLOW</title>
+<style>
+  html,body{margin:0;height:100%;background:#060706;overflow:hidden}
+  body{display:flex;align-items:center;justify-content:center}
+  #bezel{padding:2.6vmin;border-radius:3.5vmin;
+    background:radial-gradient(ellipse at 50% 35%,#2b2c28 0%,#161714 60%,#0d0e0c 100%);
+    box-shadow:0 0 0 2px #000,inset 0 0 2.5vmin #000,0 1.5vmin 6vmin #000}
+  #screen{display:block;border-radius:2.2vmin;background:#000;cursor:crosshair}
+</style>
+</head>
+<body>
+<div id="bezel"><canvas id="screen"></canvas></div>
+<script src="core.js"></script>
+<script src="world.js"></script>
+<script src="lore.js"></script>
+<script src="audio.js"></script>
+<script src="crt.js"></script>
+<script src="dialogue.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
