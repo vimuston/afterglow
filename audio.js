@@ -334,6 +334,8 @@ const Snd = (() => {
         t:t + i * .045, a:.35, d:.6, s:.7, dur:1.3, r:.9, vol:.028, vib:.006, filt:'bandpass', f0:i % 2 ? 1150 : 820, q:3.5, rev:.9, echo:.3})));
       [1760, 2217, 2637, 3520].forEach((f, i) => tone({type:'triangle', f, t:t + .25 + i * .09, a:.01, d:.9, vol:.02, echo:.6, rev:.8}));
       tone({type:'noise', rate:.5, filt:'bandpass', f0:3000, q:.6, t, a:.4, d:1.2, dur:1, vol:.04, rev:.6}); },
+    arc(){ if (on() && can('arc', 60)) { tone({type:'noise', rate:1.3, filt:'highpass', f0:2500, a:.001, d:.12, vol:.14});
+      tone({type:'sawtooth', f:1600, f2:300, slide:.1, a:.001, d:.1, vol:.05}); } },
     miss(){ if (on() && can('miss', 50)) tone({type:'noise', rate:1.6, filt:'bandpass', f0:2400, f1:5200, q:2, a:.01, d:.05, dur:.06, vol:.05}); },
     roar(){ if (!on()) return; const t = ac.currentTime;
       tone({type:'sawtooth', f:75, f2:48, slide:1, a:.12, d:1.1, s:.6, dur:.9, r:.4, vol:.16, vib:.04, filt:'lowpass', f0:900, f1:300, q:3, rev:.6});

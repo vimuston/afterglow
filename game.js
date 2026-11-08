@@ -1155,8 +1155,30 @@ function castLightning(tr){
     else if (TD[map[i]].burn) ignite(i);
     sparks(hx, hy, 8);
   }
+  arcLightning(hit, tn);
   if (seeds.length) electrify(seeds, tn);
   endTurn();
+}
+// every monster the bolt hits throws the charge on to whatever is standing next to it,
+// and that one to the next, weaker each jump. It never arcs into you or Eli.
+const ARC_JUMPS = 3;
+function arcLightning(hit, tn){
+  const queue = [...hit].filter(e => !e.isPlayer && !e.npc).map(e => ({e, n:0}));
+  let arcs = 0;
+  while (queue.length) {
+    const {e, n} = queue.shift();
+    if (n >= ARC_JUMPS) continue;
+    for (const o of ents) {
+      if (o.dead || o.isPlayer || o.npc || hit.has(o) || cheb(e, o) !== 1) continue;
+      hit.add(o); arcs++;
+      const delay = 110 * (n + 1), [ax, ay] = ctr(e), [bx, by] = ctr(o);
+      bolts.push({pts:[[ax, ay], [bx, by]], t0:tn + delay, dur:300, thin:1});
+      damage(o, Math.max(1, 3 - n), 'shock', delay);
+      setTimeout(() => { sparks(bx, by, 6); flash(o.x, o.y, 2.5, [.6,.75,1], 1.8, 320); Snd.arc(); }, delay);
+      queue.push({e:o, n:n + 1});
+    }
+  }
+  if (arcs) log(arcs > 1 ? `The lightning arcs on through ${arcs} more!` : 'The lightning arcs to its neighbour!', [.7,.85,1]);
 }
 // ---- puzzles: cold torches that open a gate, a rune that wants a pool full of lightning, a grave
 function lightTorch(i){
@@ -1927,15 +1949,17 @@ function strokePath(p){ ctx.beginPath(); ctx.moveTo(p[0][0], p[0][1]); for (let 
 function drawBolts(tn){
   bolts = bolts.filter(b => {
     const p = (tn - b.t0) / b.dur; if (p >= 1) return false;
+    if (p < 0) return true;   // an arc still waiting for its jump
     b.jag = jag(b.pts);
     if (!b.forks || tn - (b.jt || 0) > 45) { b.jt = tn; b.forks = [];
       for (let f = 0; f < 3; f++) { let k = ri(1, b.pts.length - 1), fx = b.pts[k][0], fy = b.pts[k][1]; const fp = [[fx, fy]];
         for (let n = 0; n < 4; n++) { fx += (rnd()-.5)*1.6; fy += (rnd()-.5)*1.1; fp.push([fx, fy]); } b.forks.push(fp); } }
     ctx.globalAlpha = (1 - p*p) * (rnd() < .15 ? .4 : 1);
     ctx.lineJoin = 'miter';
-    ctx.strokeStyle = b.col ? css(...b.col) : 'rgb(110,160,255)'; ctx.lineWidth = 6; strokePath(b.jag);
-    ctx.lineWidth = 2; b.forks.forEach(f => strokePath(f.map(([x, y]) => [sx(x), sy(y)])));
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.2; strokePath(b.jag);
+    const w = b.thin ? .55 : 1;
+    ctx.strokeStyle = b.col ? css(...b.col) : 'rgb(110,160,255)'; ctx.lineWidth = 6 * w; strokePath(b.jag);
+    ctx.lineWidth = 2 * w; if (!b.thin) b.forks.forEach(f => strokePath(f.map(([x, y]) => [sx(x), sy(y)])));
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.2 * w; strokePath(b.jag);
     ctx.globalAlpha = 1; ctx.lineJoin = 'round';
     return true;
   });

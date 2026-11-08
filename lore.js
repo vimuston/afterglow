@@ -608,7 +608,7 @@ GONZO.tomes = {
 };
 GONZO.tomeFacts = {
   fire:'Press 1, then aim. Burns over time, lights torches, clears brambles and webs.',
-  lightning:'Press 2, then aim. Electrifies whole pools of water. Shatters ice walls.',
+  lightning:'Press 2, then aim. Arcs from each monster it hits to the ones beside it. Electrifies whole pools of water. Shatters ice walls.',
   frost:'Press 3, then aim. Freezes monsters, water and lava. Frozen things are easy to hit, and take double from blades.',
 };
 GONZO.endings = {
