@@ -14,7 +14,7 @@
 //  {name} and other {memory} keys are filled in.
 // =====================================================================
 
-const WHY = {down:'you were looking for the way down', unknown:"you didn't know why you'd come",
+const WHY = {stone:'you had come for the immortality stone', down:'you were looking for the way down', unknown:"you didn't know why you'd come",
              running:'you were running from something', light:'you just followed the light in my window'};
 const PROUD = {made:'something you made', helped:'someone you helped', here:'simply still being here',
                none:"nothing at all — and we both know that wasn't true"};
@@ -24,9 +24,9 @@ const BELIEVER = {teacher:'a teacher believed in you first', family:'your family
 const CHAPTERS = [
   // ------------------------------------------------------------------ 0: the kettle
   [
-    {act:'An old man looks up from a crackling hearth. His eyes are bright and very kind.'},
-    {s:"Oh! A visitor. Forgive me, I don't get many. Not ones who knock, anyway.", face:'happy'},
-    "Come in out of the weather. Sit, sit. That chair is the good one. The other one bites.",
+    {act:'An old man sits by a small campfire at the foot of the stairs, warming his hands. His eyes are bright and very kind.'},
+    {s:"Oh! A visitor. Forgive me, I don't get many down here. Not ones who say hello, anyway.", face:'happy'},
+    "Come and sit. That rock is the good one. The other one bites.",
     {act:'He sets a dented kettle on the fire. It begins, very quietly, to sing.'},
     "There. Kettle's on. Now then.",
     {input:'name', q:"What do they call you, traveller?", r:[
@@ -34,44 +34,51 @@ const CHAPTERS = [
         ? "Fair enough. Names are heavy things to hand a stranger. I'll call you 'friend' until you decide otherwise."
         : `${m.name}. That's a good name. It sits right in the mouth, like a warm stone.`, face:'happy'},
     ]},
-    "I'm nobody important. Just an old man who keeps a fire going. But I've learned one thing, living out here at the edge of everything.",
-    {s:"People who wander in through that door usually aren't lost. They're looking. Not always for the thing they think they're looking for.", face:'think'},
-    {q:"So. What brought you all the way out here?", opts:[
-      {t:"I'm looking for the way down.", set:{why:'down'}, r:[
-        "The way down. Past the mire, up through the cold pass, under the mountain where the rock runs red.",
-        {s:"It's a long road. Most people who ask about it already know that. They ask anyway. That's something.", face:'happy'}]},
+    "I'm nobody important. Just an old man who wanders down here now and then. Bad knees. Good boots.",
+    {s:"People who come down those stairs usually aren't lost. They're looking. Not always for the thing they think they're looking for.", face:'think'},
+    {q:"So. What brought you all the way down here?", opts:[
+      {t:"I'm looking for the immortality stone.", set:{why:'stone'}, r:[
+        {s:"The immortality stone.", face:'think'},
+        {act:'He looks into the fire for a long moment.'},
+        "At the very bottom, they say. In the tomb of a king who wanted to live forever, and very nearly managed it. Five floors down, each worse than the last.",
+        {s:"I'll not tell you it's a bad idea. You'd go anyway. The ones who ask about it always do.", face:'sad'}]},
       {t:"I don't really know.", set:{why:'unknown'}, r:[
         {s:"Ha! Good. That's the most honest answer anyone's given me in years.", face:'happy'},
         "'I don't know' is a door, not a wall. You'll see."]},
       {t:"I'm running from something.", set:{why:'running'}, r:[
         {s:"Mm. Running is just walking with worry on your back.", face:'sad'},
-        "I won't ask from what. Not yet. But you're safe here for a while. The fire doesn't care what you're running from."]},
+        "I won't ask from what. Not yet. But you're safe by this fire for a while. Fire doesn't care what you're running from."]},
       {t:"I just followed the light.", set:{why:'light'}, r:[
-        "You saw the window. I keep the lamp in it for exactly that reason.",
+        "You saw my little fire from the top of the stairs. I keep it going for exactly that reason.",
         {s:"Some nights I wonder if anyone will ever follow it. And here you are.", face:'happy'}]},
     ]},
-    {q:"Tell me, when you came up through those cellars, with all those creatures snapping at your heels... were you afraid?", opts:[
+    {when: m => m.why !== 'stone', then:[
+      "Whatever you're after, you'll hear the story soon enough: there's a stone at the bottom of all this. They say whoever holds it never dies.",
+      {s:"Five floors down. Each worse than the last. I've never seen it. I've never wanted to, much.", face:'think'}]},
+    {s:"I go down a little way myself, every now and then. My knees complain, but my knees complain about everything.", face:'wink'},
+    "You'll find me at the top of each floor, I expect. An old man with a fire, a kettle, and a few things to sell. Blades. Potions. Opinions. The opinions are free.",
+    {q:"Tell me, coming down those stairs into the dark, with all those creatures snapping about... were you afraid?", opts:[
       {t:"Terrified.", set:{fear:'terrified'}, r:[
         "Good. Fear means you understood what was at stake. Only fools aren't afraid.",
         {s:"The brave ones are just the frightened ones who kept walking.", face:'happy'}]},
       {t:"No. Not really.", set:{fear:'no'}, r:[
         {s:"No? Then perhaps you're braver than you give yourself credit for.", face:'think'},
-        "Or perhaps you've been afraid so long it just feels like weather. Either way, you came through."]},
+        "Or perhaps you've been afraid so long it just feels like weather. Either way, you came down."]},
       {t:"I'm always a little afraid.", set:{fear:'always'}, r:[
         {s:"Me too. Seventy-odd years, and I still check under the bed.", face:'wink'},
         "Being a little afraid all the time is exhausting, isn't it? You're allowed to put it down here, by the fire. Just for a bit."]},
     ]},
     {act:'He tears a heel off a loaf and hands it to you. It is still faintly warm.'},
     {s:"Bread. It's yesterday's, but yesterday was a good day, so it should be fine.", face:'happy'},
-    "Go on, then. The world won't explore itself. But come back and see me now and then.",
-    {f: m => `I'd like to hear what you find out there, ${m.name}. And what you find in yourself, too.`, face:'happy'},
+    {f: m => `I'd like to hear what you find down there, ${m.name}. And what you find in yourself, too.`, face:'happy'},
     {fx: () => chapterReward(0)},
   ],
 
   // ------------------------------------------------------------------ 1: what you carry
   [
-    {f: m => `${m.name}! You came back. I hoped you would. I made too much soup on purpose.`, face:'happy'},
-    {when: m => m.visited[Z.MIRE], then:["You smell like the mire. Don't apologise. Everybody does, after."]},
+    {f: m => `${m.name}! There you are. I came down the long way round. I made too much soup on purpose.`, face:'happy'},
+    "You smell like the cellars. Don't apologise. Everybody does, after.",
+    {when: m => m.why === 'stone', then:["Still after that stone? Ha. Of course you are. Sit first. The stone has waited a thousand years. It can wait for soup."]},
     {when: m => m.kills >= 5, then:[{s:"And you've been in a scrap or two, I see. Sit. Let's look at you.", face:'think'}]},
     {act:'He ladles soup into two chipped bowls and sits down across from you.'},
     {q:"Tell me something. What's the thing you're proudest of? Not the big impressive thing. The real one.", opts:[
@@ -114,12 +121,8 @@ const CHAPTERS = [
   // ------------------------------------------------------------------ 2: small lights
   [
     {s:"Back again! The kettle's learned your footsteps. It started whistling before you knocked.", face:'happy'},
-    {when: m => m.visited[Z.MIRE], then:[
-      "So. You've been through the mire. Did you see the little lights out there? The fireflies?",
-      {s:"People think they're guiding you somewhere. They're not. They're just being lights. That's enough, for a firefly.", face:'think'}],
-     else:[
-      "Have you been to the mire yet? South of the cellars, where the fog lives. There are fireflies out there.",
-      {s:"Little things, just being lights. Remember them when you see them. They matter more than they know.", face:'think'}]},
+    "That's the mire out there, past the reeds. Fog, and bog, and fireflies. Did you know there were fireflies underground? Nobody believes me.",
+    {s:"People think they're guiding you somewhere. They're not. They're just being lights. That's enough, for a firefly.", face:'think'},
     {q:"Who was the first person who believed in you?", opts:[
       {t:"A teacher.", set:{believer:'teacher'}, r:[
         "Teachers. They plant trees they'll never sit under.",
@@ -254,9 +257,27 @@ const CHAPTERS = [
         "Belief is the only thing I know of that grows when you give it away."]},
     ]},
     {act:'He closes the notebook and, very gently, puts it in your hands.'},
-    "Now go. Down through the red rock and out the other side.",
-    {s:"And when you get wherever you're going, find somebody sitting alone by a fire... and ask them a question.", face:'think'},
+    {s:"And now you've got it. The stone. I can feel it from here, humming away like a kettle that never boils.", face:'think'},
+    {q:"So. What will you do with forever?", opts:[
+      {t:"Keep it. Live forever.", set:{end:'keep'}, r:[
+        {s:"Then live it well. Forever is only a great many todays, one after another.", face:'think'},
+        "Fill them with people. Sit by other people's fires. Ask them things. A long life with nobody in it is just a long corridor.",
+        {s:"And come and see me now and then. While there's a me to see.", face:'happy'}]},
+      {t:"Give it to you, Eli.", set:{end:'give'}, r:[
+        {act:'He laughs, a real laugh, the kind that has to sit down halfway through.'},
+        {s:"Me? Oh, friend. I've had a long life and a good one. I've had Marta, and soup, and you.", face:'happy'},
+        {act:'He folds your fingers back over the stone.'},
+        {s:"An old man isn't supposed to be forever. That's not sad. That's just the shape of the thing. You keep it. Or don't. You'll know.", face:'wink'}]},
+      {t:"Leave it here. I don't need it.", set:{end:'leave'}, r:[
+        {s:"...Ha! I hoped you'd say that. I hoped and I didn't dare say so.", face:'happy'},
+        {act:'You set the stone down on the cold floor. It keeps beating, slow and patient, all on its own.'},
+        "It was never really the point, was it? The stone. Forever is a big empty room. What you wanted was a reason to keep walking.",
+        {s:"And look at you. You found one at every single floor.", face:'happy'}]},
+    ]},
+    {when: m => m.why === 'stone', then:[{f: m => `You told me, that first night, that you'd come for this stone, ${m.name}. You came all this way for it. And look at everything you found instead.`, face:'happy'}]},
+    {s:"Now. When you get wherever you're going, find somebody sitting alone by a fire... and ask them a question.", face:'think'},
     {s:"That's how it gets passed along, you see. It always has been. Somebody asked me, once.", face:'happy'},
+    {s:"Come on. Let's go up. It's a lot of stairs, and the kettle's on.", face:'happy'},
     {fx: () => chapterReward(5)},
   ],
 ];
@@ -373,6 +394,7 @@ const Dialog = {
   close(){
     const cb = dlg && dlg.onClose; dlg = null;
     if (cb) cb();
+    saveGame();   // purchases, favours and chapters are kept even if you refresh straight away
   },
   next(){
     const m = state.mem;
@@ -560,43 +582,165 @@ const Dialog = {
   },
 };
 
-// ----- talking to him
-function talkToOldMan(){
-  const m = state.mem;
-  const ready = m.ch === 0 || (m.ch < CHAPTERS.length && state.turn - m.lastTalk >= 18 && (m.ch < 5 || m.visited[Z.PASS] || m.visited[Z.DEEPS]));
-  if (ready) {
-    const ch = m.ch;
-    Dialog.open(CHAPTERS[ch], 'man', () => { m.lastTalk = state.turn; m.met = true; if (!m.nextEcho) m.nextEcho = state.turn + 20; });
-    return;
+// ----- favours, one per floor; he gives you something to wear for each
+const QUESTS = {
+  1: {item:'specs', need:1, short:() => `find his spectacles (${state.keys.specs ? 'found' : 'a goblin took them'})`,
+    ask:[{s:"Since you're here... I've a small favour to ask, if you don't mind. My spectacles. I came down last spring and a goblin snatched them right off my nose.", face:'sad'},
+         "It's probably wearing them. Probably looks very distinguished. Would you get them back for me? I've something for you, if you do."],
+    remind:"My spectacles. A goblin has them. It'll be the most distinguished-looking goblin you've ever seen.",
+    thanks:[{act:'He polishes them on his cardigan, puts them on, and looks at you properly for the first time.'},
+            {s:"Oh, there you are! You're much less blurry than I thought. Handsomer, too.", face:'happy'}]},
+  2: {eggs:true, need:3, short:() => `burn the three egg sacs (${Math.min(3, state.eggs || 0)} of 3)`,
+    ask:[{s:"There's a spider up in this pass. A big one. The Broodmother, the miners called her. She's laid her eggs in little caves all over the mountain.", face:'think'},
+         "Three sacs, I counted. If they hatch, nobody will ever use these stairs again. Burn them for me? You've got the fire for it now."],
+    remind:"Three egg sacs, tucked in little caves. Fire's the only cure for that sort of thing.",
+    thanks:[{s:"All three? Good. That's a whole mountain that can breathe again.", face:'happy'}]},
+  3: {item:'lily', need:3, short:() => `pick three moonlilies (${Math.min(3, state.keys.lily || 0)} of 3)`,
+    ask:[{s:"Do you know moonlilies? They glow, like a little lamp left on. They only grow out in the bog water.", face:'happy'},
+         "Marta used to make tea from them. I'd like to taste it again. Three would do. Mind the leeches."],
+    remind:"Three moonlilies. They glow. Out in the bog, where the water's deep enough to wet your knees.",
+    thanks:[{act:'He drops them into the kettle, one by one, and the whole camp smells of summer evenings.'},
+            {s:"...Yes. That's the one. Thank you. You don't know what that is, to me.", face:'sad'}]},
+  4: {item:'hammer', need:1, short:() => `fetch his hammer (${state.keys.hammer ? 'found' : 'on an island in the lava'})`,
+    ask:[{s:"I did something foolish last time I was down here. Dropped my hammer. Well. Threw it. At a salamander.", face:'wink'},
+         "It landed on a little island in a lake of lava. I've wanted it back for thirty years. You've got frost in your fingers now. Would you?"],
+    remind:"My hammer, on the island in the fire-lake. Frost makes a fine bridge.",
+    thanks:[{s:"My hammer! Thirty years. It hasn't changed a bit. I have, a little.", face:'happy'},
+            "I built a house with this. One stone, a nap, another stone. Here: I made you something with it, a while ago, hoping."]},
+  5: {grave:true, need:1, short:() => state.keys.flower ? 'lay the pressed flower on Marta\'s grave' : 'Marta\'s grave is tended',
+    ask:[{s:"I'll tell you why I keep coming down here.", face:'sad'},
+         "My wife, Marta. When she died, the village wouldn't have her in the churchyard. Said she was a witch, because she was kind to strange people. So I brought her here, where the old kings sleep.",
+         {s:"I can't get that far down any more. Would you take her this? It's a flower from our garden. Pressed. It's the last one.", face:'sad'},
+         {act:'He gives you a pressed flower, flat and pale and very carefully kept.'},
+         {fx: () => { state.keys.flower = 1; }}],
+    remind:"Marta's grave. Somewhere past the first few rooms. Just leave the flower on the stone. She'll know.",
+    thanks:[{act:'He nods, very slowly, and doesn\'t say anything for a long while.'},
+            {s:"Thank you. I can stop worrying about that now. I didn't know how heavy it was until you put it down.", face:'happy'}]},
+};
+const questFor = n => QUESTS[n];
+function questDone(){
+  const q = questFor(state.floor); if (!q) return false;
+  if (q.item) return (state.keys[q.item] || 0) >= q.need;
+  if (q.eggs) return (state.eggs || 0) >= q.need;
+  if (q.grave) return map.includes('GRAVEDONE');
+  return false;
+}
+function giveGift(){
+  const n = state.floor, g = GIFTS[n], old = state.gear[g.slot];
+  state.gear[g.slot] = {name:g.name, ac:g.ac};
+  state.quest.stage = 3;
+  const q = questFor(n); if (q.item) delete state.keys[q.item];
+  flash(player.x, player.y, 5, [1,.9,.7], 1.8, 1200); Snd.scroll();
+  log(`Eli gives you a ${g.name}${old ? `, much better than your ${old.name}` : ''}. (+${g.ac} AC, now ${playerAC()})`, [1,.85,.6]);
+}
+const GIFT_LINES = {
+  1:"Here. My old leather jerkin. I wore it when I was young and foolish. Now you can wear it while you are.",
+  2:"Take this hood. Marta knitted the lining. It's kept my ears on my head for forty winters.",
+  3:"This was my father's chain shirt. Heavy as a bad conscience, but it'll turn a claw.",
+  4:"An iron helm. I hammered it out myself, years ago. With this hammer! It all comes round, you see.",
+  5:"And this. A cloak. Marta wove it, the last winter. She said, 'Give it to someone who needs keeping warm.' I think she meant you.",
+};
+function questSteps(){
+  const n = state.floor, q = questFor(n), st = state.quest;
+  if (!q || st.stage === 3) return [{s:"Favours? No, no. You've done plenty. Sit, rest.", face:'happy'}];
+  if (st.stage === 0) return [...q.ask, {fx: () => { st.stage = 1; log(`A favour for the old man: ${q.short()}.`, [.85,.8,1]); }}];
+  if (!questDone()) return [{s:q.remind, face:'think'}];
+  return [...q.thanks, {s:GIFT_LINES[n], face:'happy'}, {fx: giveGift}];
+}
+
+// ----- his little shop
+function shopSteps(){
+  const t = state.floor, opts = [];
+  for (const k of ['dagger', 'sword', 'axe']) {
+    const w = weaponStats({type:k, tier:t}), own = state.weapon && state.weapon.type === k && state.weapon.tier >= t;
+    opts.push({t:`${capF(w.name).padEnd(20)}${(w.lo + '-' + w.hi).padEnd(6)}${own ? 'yours' : w.price + 'g'}`, r:[{fx: () => {
+      if (own) { dlg.queue.unshift({s:"You've already got that one. It suits you.", face:'happy'}, ...shopSteps()); return; }
+      if (state.gold < w.price) { Snd.error(); dlg.queue.unshift({s:`That's ${w.price} gold, and you've ${state.gold}. Come back when your pockets are heavier.`, face:'sad'}, ...shopSteps()); return; }
+      const old = state.weapon ? weaponStats().name : null;
+      state.gold -= w.price; state.weapon = {type:k, tier:t}; Snd.coin();
+      log(`You buy the ${w.name}. ${w.lo}-${w.hi} damage, +${playerHit()} to hit. (${w.note})`, [1,.9,.6]);
+      dlg.queue.unshift({s:old ? `Here you are. I'll take the ${old} for the kindling.` : pick(["Mind the pointy end. That's the end that does the work.", "There. Now you're dangerous. Try to be dangerous to the right things."]), face:'happy'}, ...shopSteps());
+    }}]});
   }
-  // idle chatter (+ a little rest)
-  const lines = [];
-  if (player.hp < player.maxhp * .5) {
+  for (const [k, name] of [['potion', 'Healing potion'], ['mana', 'Mana potion']])
+    opts.push({t:`${name.padEnd(24)}${PRICES[k]}g`, r:[{fx: () => {
+      if (state.gold < PRICES[k]) { Snd.error(); dlg.queue.unshift({s:"Not quite enough, I'm afraid. I'd give it you for free, but then I'd have to give everyone everything for free, and where would that end? Somewhere nice, probably.", face:'wink'}, ...shopSteps()); return; }
+      state.gold -= PRICES[k]; state.inv[k] = (state.inv[k] || 0) + 1; Snd.coin();
+      log(`You buy a ${name.toLowerCase()}. (${state.inv[k]} in your pack)`, k === 'potion' ? [1,.55,.6] : [.6,.7,1]);
+      dlg.queue.unshift(...shopSteps());
+    }}]});
+  opts.push({t:"That's all, thanks.", r:[{fx: () => dlg.queue.unshift(...menuSteps())}]});
+  return [{q:`"Have a look. Prices are fair; the company's free." (You have ${state.gold} gold.)`, opts}];
+}
+
+// ----- the fire: a few words, and a bit of rest
+const FLOOR_TIPS = {
+  1:["There's a big orc down at the far end of these cellars. Grukka, they call her. Hits like a falling wardrobe. Bring potions.",
+     "No spells yet? Ha. Use your tail. Then use a blade. Then, later, use your head."],
+  2:["The spider's den has a gate the old miners lit with four torches. Light all four and it opens. Some of them are tucked away. One's over a crevasse, if I remember.",
+     "Brambles up here are dry as old bread. Sometimes there's something behind them."],
+  3:["The hydra. Don't cut its heads off. Well. Do. But burn it first, or every head you cut grows two. Fire, then steel, quick, while it's still burning.",
+     "Lightning in the bog is a terrible idea if you're standing in it and a wonderful idea if you're not."],
+  4:["Cinder, the dragon. When it takes a big breath, get behind a pillar and stay there. Then hit it while it's catching its breath.",
+     "Frost makes a road of lava and a bridge of water. Both rivers down here want crossing."],
+  5:["The tomb's sealed four ways, and each seal wants a different trick. Look at each one properly before you start throwing things.",
+     "Bone knights shrug off fire and lightning. But anything frozen solid is easy to hit, and easy to break.",
+     "The king tells you what he's going to do before he does it. Watch the floor. Watch his hands. Hide from the black light.",
+     "That light you took off the dragon. The dead can't abide it. Nor can a dead king, I'd wager."],
+};
+function restSteps(){
+  const m = state.mem, f = state.floor, lines = [];
+  if (player.hp < player.maxhp * .5 && m.restFloor !== f) {
+    m.restFloor = f;
     lines.push({s:`You're hurt, ${m.name}. Sit. No arguments.`, face:'sad'},
                {act:'He cleans your scrapes with warm water and something that smells of honey and pine.'},
-               {fx: () => healPlayer(player.maxhp)});
-  } else {
+               {fx: () => { healPlayer(player.maxhp); player.poison = 0; }});
+    return lines;
+  }
+  m.tips ||= {};
+  const tips = FLOOR_TIPS[f] || [], ti = m.tips[f] || 0;
+  if (ti < tips.length) { lines.push({s:tips[ti], face:'think'}); m.tips[f] = ti + 1; }
+  else {
     const w = weatherIs('storm') ? 'storm' : weatherIs('rain') ? 'rain' : weatherIs('snow') ? 'snow' : weatherIs('wind') ? 'wind' : null;
     if (w && !m.saidWeather?.[w] && rnd() < .6) { (m.saidWeather ||= {})[w] = 1; lines.push({s:IDLE_WEATHER[w], face:'happy'}); }
     else { lines.push({s:IDLE[m.idleI % IDLE.length], face:pick(['happy','neutral','wink','think'])}); m.idleI++; }
-    if (m.ch < CHAPTERS.length) lines.push(m.ch >= 5 && !m.visited[Z.PASS]
-      ? "Go and see the pass, east of the mire. Then come back. I've one more question for you."
-      : "Go on, have an adventure. I'll think of a good question while you're gone.");
-    else lines.push({s:"I'm proud of you. That's all. Go on.", face:'happy'});
-    lines.push({fx: () => healPlayer(4, true)});
   }
-  Dialog.open(lines, 'man');
+  lines.push({act:'You sit by the fire a while. Your breathing slows.'}, {fx: () => healPlayer(4, true)});
+  return lines;
+}
+function menuSteps(greet){
+  const st = state.quest, q = questFor(state.floor);
+  const opts = [{t:"Let's trade.", r:[{fx: () => dlg.queue.unshift(...shopSteps())}]}];
+  if (q && st.stage !== 3) opts.push({t:st.stage === 0 ? 'Can I help you with anything?' : questDone() ? 'I did what you asked.' : 'About that favour...',
+    r:[{fx: () => dlg.queue.unshift(...questSteps(), ...menuSteps())}]});
+  opts.push({t:'Sit by the fire a while.', r:[{fx: () => dlg.queue.unshift(...restSteps(), ...menuSteps())}]});
+  opts.push({t:'Goodbye.', r:[{s:pick(["Go carefully. Come back in one piece. Two pieces at most.", "Off you go. The fire will keep.", "Mind the dark. It minds you."]), face:'happy'}]});
+  return [{q:greet || pick(["Now then. What can an old man do for you?", "Sit, sit. What'll it be?", "Back again! What do you need?"]), opts}];
+}
+function talkToOldMan(){
+  const m = state.mem;
+  if (state.hasStone) {
+    Dialog.open(CHAPTERS[5], 'man');
+    return;
+  }
+  if (m.ch < state.floor && m.ch < 5) {
+    const ch = m.ch;
+    Dialog.open([...CHAPTERS[ch], ...menuSteps(ch === 0 ? "Now. Business, I'm afraid. An old man has to eat. What can I do for you?" : undefined)], 'man',
+      () => { m.lastTalk = state.turn; m.met = true; if (!m.nextEcho) m.nextEcho = state.turn + 120; });
+    return;
+  }
+  Dialog.open(menuSteps(), 'man');
 }
 
 function maybeEcho(){
   const m = state.mem;
-  if (!m.met || dlg || state.turn < m.nextEcho || zone[idx(player.x, player.y)] === Z.HOUSE) return;
-  if (visibleMonsters().length) return;
+  if (!m.met || dlg || state.turn < m.nextEcho || cheb(player, npc) <= 6 || state.hasStone || m.echoFloor === state.floor) return;
+  if (visibleMonsters().length || ents.some(e => e.boss && e.awake && !e.dead)) return;
   const pool = ECHOES.filter((e, i) => !m.echoUsed[i] && (!e.when || e.when()));
   if (!pool.length) return;
   const e = pool.find(e => e.when) || pick(pool);
   m.echoUsed[ECHOES.indexOf(e)] = 1;
-  m.nextEcho = state.turn + ri(30, 55);
+  m.nextEcho = state.turn + ri(150, 250); m.echoFloor = state.floor;   // at most one per floor
   Snd.zone();
   Dialog.open([{act:"The old man's voice comes back to you, as clear as if he were walking beside you:"}, {q:e.q, opts:e.opts}], 'echo');
 }
@@ -608,15 +752,18 @@ function chapterReward(n){
   if (n === 1) { P.maxhp += 4; healPlayer(P.maxhp); log('Something in your chest settles. (+4 max HP)', [1,.85,.6]); }
   if (n === 2) { P.maxmp += 4; P.mp = P.maxmp; log('Your thoughts feel clearer, like a window wiped clean. (+4 max MP)', [.7,.85,1]); }
   if (n === 3) { state.costDown = 1; log('Magic comes easier now. (spells cost 1 less MP)', [.7,.85,1]); }
-  if (n === 4) { state.armor = 1; healPlayer(P.maxhp); log('You stand a little taller. (take 1 less damage from blows)', [1,.85,.6]); }
+  if (n === 4) { state.acBonus = (state.acBonus || 0) + 1; healPlayer(P.maxhp); log('You stand a little taller. (+1 AC)', [1,.85,.6]); }
   if (n === 5) {
-    state.belief = true; P.maxhp += 6; healPlayer(P.maxhp); P.mp = P.maxmp;
-    m.knowsName = true;
-    log('You believe in yourself again. (+6 max HP, and a light of your own)', [1,.9,.5]);
+    state.belief = true; healPlayer(P.maxhp); P.mp = P.maxmp;
+    m.knowsName = true; state.won = true;
+    log('You believe in yourself again. And you have a long way up, with good company.', [1,.9,.5]);
+    log(`THE END. ${{keep:'You kept forever.', give:'You offered him forever. He gave it back.', leave:'You left forever on the floor.'}[m.end] || ''} (R to begin again)`, [1,1,.6]);
     Snd.win();
+    inspect = {confirm:false, ending:true, x:player.x, y:player.y, key:'end', title:'THE END', sub:`${m.name} · floor 5 of 5 · ${m.kills} beasts`,
+      text:GONZO.endings[m.end] || GONZO.endings.leave, fact:'Press R to begin again.', col:[1,.9,.6], t0:now(), turn:state.turn};
   }
   rebuildLights();
 }
 // he tells you his name partway through
-CHAPTERS[3].push({s:"Oh — and I never told you my name, did I? Terribly rude. It's Eli. Everybody called me Eli, once.", face:'happy'},
+CHAPTERS[3].splice(CHAPTERS[3].length - 1, 0, {s:"Oh — and I never told you my name, did I? Terribly rude. It's Eli. Everybody called me Eli, once.", face:'happy'},
                  {fx: () => { state.mem.knowsName = true; }});

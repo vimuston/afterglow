@@ -2,7 +2,7 @@
 // =====================================================================
 //  Layout: a 60x30 view onto a 120x60 world, plus a 5-row HUD
 // =====================================================================
-const VW = 60, VH = 30, HUDROWS = 5;
+const VW = 60, VH = 30, HUDROWS = 6;
 const MW = 120, MH = 60;
 const TW = 16, TH = 24;
 const SW = VW * TW, SH = (VH + HUDROWS) * TH;

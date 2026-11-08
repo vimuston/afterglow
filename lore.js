@@ -420,3 +420,209 @@ hud: {
     "Every run ends. Most of them end in screaming. This one would end in a quiet, deliberate click, which is somehow worse. The valley holds its breath. The weather pauses mid-gust. Well? Are you sure?",
   ],
 };
+
+// =====================================================================
+//  The long way down: five floors, five things standing in the way,
+//  and an old man who keeps turning up at the top of the stairs.
+// =====================================================================
+GONZO.deities.quillow.boon = 'AC +1.';
+GONZO.hud.lightning = GONZO.hud['1']; GONZO.hud.fire = GONZO.hud['2']; GONZO.hud.frost = GONZO.hud['3'];
+delete GONZO.hud['1']; delete GONZO.hud['2']; delete GONZO.hud['3'];
+Object.assign(GONZO.hud, {
+  ac: [
+    "ARMOUR CLASS. The number every claw, tooth and rusty cleaver down here has to beat before it gets to you. You don't dodge. You never dodge. You stand there in whatever the old man stitched for you and you let the dice argue it out.",
+    "Your armour class: ten for being a warm body, plus whatever leather and iron and love you've got strapped on. Every point is one more monster swinging at air and looking embarrassed about it.",
+  ],
+  potion: [
+    "Healing potions, rattling in your pack like loose teeth. Press 4 and drink one: the wounds close, the venom gives up, and for a few glorious seconds you feel like you could fistfight a mountain.",
+  ],
+  mana: [
+    "Mana potions. Blue, fizzy, tastes faintly of batteries and regret. Press 5. Your skull lights back up like a Las Vegas marquee at dusk.",
+  ],
+  pack: [
+    "Your pack. Everything you own, everything you wear, every small promise you made to an old man by a fire. Press I and look at it. Take stock. It's important to know what you're carrying.",
+  ],
+  unknown: [
+    "A spell you don't have yet. Somewhere down here, something big and mean is sitting on the book that teaches it. That is how it always goes: the good things are guarded by the worst things. Go and be worse.",
+  ],
+});
+GONZO.man = [
+  "An old man in a knitted cardigan, squatting by a little campfire at the foot of the stairs as if it were the most natural thing in the world, beard like a cloud that decided to settle down. He has a kettle. Of course he has a kettle.",
+  "The old man. Hands like tree roots, voice like a well-tuned cello, the calm of someone who has lost everything once and found out it didn't matter as much as he'd feared. He sells swords now, apparently. Go talk to him.",
+  "He's humming something, poking his fire with a stick. He looks up and smiles like he's known you your whole life, which is absurd, and also, somehow, true. How does he keep getting down here before you?",
+];
+GONZO.manNamed = [
+  "Eli. Keeper of the kettle and the fire and a dog-eared notebook full of everything you ever told him. He's at the top of every floor before you, every time. I've stopped asking how. Some questions are rude.",
+  "Eli, by his little fire, with his little shop: blades on a blanket, potions in a row. He undercharges. He knows he undercharges. He's the kind of man you meet once and carry around for the rest of your life.",
+];
+Object.assign(GONZO.tiles, {
+  TORCHOUT: [
+    "A cold torch, black at the tip, set in an iron bracket by some miner who died a long time ago and left the lights off. A little fire would bring it back. Everything comes back, mostly.",
+    "An unlit torch. It is a promise somebody stopped keeping. You've got fire in your fingers now. Keep it for them.",
+  ],
+  CAMPFIRE: [
+    "The old man's campfire: a ring of stones, a heap of something that might be coal and might be furniture, a dented kettle singing on top. It is the only thing on this whole floor that wants nothing from you.",
+    "A small, stubborn fire at the foot of the stairs, the kind that's been lit in the same place a hundred times. It warms your face and your hands and some third thing behind your ribs that hasn't been warm for a while.",
+  ],
+  UPSTAIRS: [
+    "The stairs back up. Daylight is up there, and beds, and people who have never once been bitten by a hydra. They don't know what they're missing. Neither do you, for now. Down is the only direction that matters.",
+  ],
+  WEB: [
+    "A spider web, thick as fishing line and twice as sticky, strung across the way like a bad idea someone had in the dark. Walk into it and it holds you like a jealous lover. Fire takes it in a single bright breath.",
+    "Webbing. Grey, glistening, humming faintly in the draught. Something built this with eight legs and a great deal of patience. I have neither, so I'm going to burn it.",
+  ],
+  EGGSAC: [
+    "An egg sac, the size of a sheep, pulsing. PULSING. Something inside is turning over in its sleep. I'm told there are hundreds of them in each one. Burn it. Burn it and do not look back and do not, under any circumstances, poke it.",
+    "A leathery sac stuck to the rock with spider glue, warm and twitching. This is a nursery. This is the worst nursery in the world. The old man wants it on fire and so, God help me, do I.",
+  ],
+  BRAMBLE: [
+    "Dry brambles, dead as last year's gossip and twice as thorny, packed so tight you can't see past them. But something glints behind. Something always glints behind. One spark and this whole tangle is history.",
+    "A wall of thorns, brittle with cold, rattling in the wind like a bag of bones. It is hiding something. Brambles always are. That's the only reason anybody lets them grow.",
+  ],
+  GATE: [
+    "An iron gate, bars as thick as your wrist, rusted into place by a century of fog. No lock. No handle. Whoever built this didn't want it opened by hands. They wanted it opened by cleverness, which is much worse.",
+    "A portcullis, cold and patient and utterly indifferent to your shoulder. I threw myself at it twice for the principle of the thing. The principle is now bruised. Look around for what opens it.",
+  ],
+  CHASM: [
+    "A crevasse, a long black crack in the world, so deep the wind comes back out of it with a different voice. You can't cross it. Nothing with feet can. But a ball of fire doesn't need feet.",
+    "The ground just stops. Below: blue ice, then grey, then nothing, a nothing that goes on for a very long time. I dropped a coin in. I am still listening for it.",
+  ],
+  PILLAR: [
+    "A great stone pillar, wide as a barn door, holding up a ceiling you'd rather not think about. When something huge starts breathing in, get behind one of these and stay there and think about your life choices.",
+    "A pillar. Columns like this are the only honest architecture: they hold things up and they hide you from dragons and they ask nothing in return. Hug it. I did.",
+  ],
+  TWALL: [
+    "Tomb wall: dressed stone, cut so fine you couldn't slip a knife between the blocks, carved with long lists of a king's victories. Every name on it is somebody he killed. He wanted them remembered as things he'd done.",
+    "Old, old stone, dry as a eulogy. The carvings go on and on: the king winning, the king judging, the king refusing to die. Nobody carved the people who built it. Nobody ever does.",
+  ],
+  TFLOOR: [
+    "Tomb floor, worn smooth by the shuffling of things that should have stopped shuffling a thousand years ago. It's dusty. It's very quiet. It's the kind of quiet that's listening.",
+    "Flagstones laid for a funeral that never ended. Every step echoes a little too long, as if the room is deciding whether to let you have it.",
+  ],
+  BONES: [
+    "Bones. A great many of them, in no particular order. Some of them are adventurers. Some of them are the things that ate the adventurers. Down here nobody keeps score.",
+    "A scatter of old bones, yellow as tobacco, gnawed by something with ideas. I counted three skulls and then I stopped counting, because counting makes it real.",
+  ],
+  SARCO: [
+    "A stone sarcophagus, lid carved with a face that has been very, very patient for a very, very long time. There is a faint scratching inside. Let it stay sealed. Some doors are walls for a reason.",
+    "A coffin of solid granite, heavy enough to hold anything in. I put my ear to it. I took my ear away from it. I am not putting my ear to anything ever again.",
+  ],
+  GRAVE: [
+    "A small grave, in a corner of a tomb built for kings. Plain stone. One name: MARTA. No titles, no victories. Somebody has kept the moss off it, once a year, for a long, long time. My throat has gone tight and I don't want to talk about it.",
+  ],
+  GRAVEDONE: [
+    "Marta's grave, with a pressed flower on it now, pale and flat and perfect. It's the only soft thing in the whole tomb. The king had marble and gold and ten thousand names carved into the walls. She has a flower. She wins.",
+  ],
+  RUNE: [
+    "A rune cut into the wall, dull and grey, its grooves still faintly warm. Water laps right against it. It is thirsty, the way a dry battery is thirsty. It wants a great deal of lightning, all at once, all around it.",
+    "A carved sigil, dead as a doornail, sitting with its feet in a pool of water like a tired old man at the seaside. One spark won't wake it. It wants the whole pool lit up.",
+  ],
+  RUNELIT: [
+    "The rune is BLAZING now, white-blue, crackling, humming like a power line in a storm. It drank the lightning out of the water and it liked it. Somewhere a gate has opened. Somewhere a dead king has noticed.",
+  ],
+  BARRICADE: [
+    "A barricade of old coffins, stacked and nailed and wedged across the way. Somebody wanted to keep something in, or out. The wood is dry as a lecture. One spark, and the problem solves itself.",
+    "Coffins, stacked like firewood. Which, if you think about it, and I have, is exactly what they are now.",
+  ],
+});
+Object.assign(GONZO.mons, {
+  spider: [
+    "A mountain spider, big as a dog, grey as the rock it hides in, eight legs going in eight directions at once. It bites, and the bite carries venom that sings in your blood for a while after. Hates fire. Everything with eight legs hates fire, and they are right to.",
+    "Spider. Fat, quick, furred with frost, eyes like a cluster of wet black grapes. It looked at me and I felt every one of those eyes individually. Burn it. Burn its web. Burn the memory of it if you can.",
+  ],
+  skeleton: [
+    "A skeleton, rattling in a rusted cuirass, sword raised in a salute to a king who stopped deserving it a thousand years ago. It's tougher than it looks. Lightning loves it: all that dry bone sings like a harp.",
+    "Bones, held together by spite and very old magic. It walks like a man who has forgotten why he got up. Hit it hard. Or hit it with lightning, which is the same thing, only louder.",
+  ],
+  zombie: [
+    "A zombie. Grey-green, slow, carrying the smell of a cellar that flooded in the reign of a forgotten king. It does not hurry. It doesn't need to. Fire makes it hurry, briefly, in a direction of its own choosing.",
+    "A shambling dead man, mouth working on words nobody has spoken in centuries. He hits like a falling door. Burn him. He won't mind. He hasn't minded anything for a very long time.",
+  ],
+  spectre: [
+    "A spectre: a thin pale smear of somebody who couldn't let go, drifting a foot above the floor. Your blade goes right through it like a hand through fog. Lightning, though. Lightning it remembers. Lightning it fears.",
+    "A ghost, cold and see-through and very, very sad, which doesn't stop it trying to freeze the heart in your chest. Steel is useless. The sky's own fire is not.",
+  ],
+  knight: [
+    "A bone knight, seven feet of old armour with nothing alive inside it, sworn to a king who never released anyone from anything. Fire slides off it. Lightning slides off it. Your blade rings off it. But FREEZE it, and it goes brittle as a winter twig.",
+    "A dead knight in full plate, visor down, sword up, utterly certain of its purpose. That certainty is the most frightening thing about it. Frost first. Then hit it like you've got something to prove.",
+  ],
+  minion: [
+    "A risen skeleton, put together in a hurry by a king with places to be. A rib is missing. A foot is on backwards. It doesn't care. Break it again. It's used to it.",
+  ],
+  matriarch: [
+    "GUTMOTHER GRUKKA. Nine feet of red muscle and scar and filed teeth, wearing a necklace of keys from every village she's ever emptied. She ate the miller of Hollin. She ate the miller's sons. She kept the miller's daughter as a footstool for eleven years. Killing her is not a crime. It is a public service, overdue by decades.",
+    "The Matriarch of the Pit, the orc who taught a whole tribe that cruelty is a kind of strength. The bones in her room are children's. I checked twice. I wish I hadn't. She is slow to anger and then she is all anger, and you are the only thing between her and the next village. Do it.",
+  ],
+  brood: [
+    "THE BROODMOTHER. A spider the size of a cart, white-grey, bristling, her abdomen swollen and ticking with ten thousand next generations. Venom like liquid fire, webs like ship's rope. She is old, and enormous, and burns like a dry haystack. Remember that last part.",
+    "Queen of the Pass. Eight eyes, each the size of a fist, each watching you with the patience of something that has eaten every miner who ever came up here with a lantern. She spits web. She bites poison. She hates fire more than she has ever loved anything.",
+  ],
+  hydra: [
+    "THE MIRE HYDRA. A great green swamp-thing with too many necks, every one of them ending in a mouth full of needles and bad intentions. Cut off a head and the stump boils and splits and grows TWO. Unless, the old man says, the stump is burning when you cut it. Fire first. Then steel. Fast.",
+    "Many-Necked. It's a riddle with teeth: you can't hack your way through it, because hacking makes more of it. Set it alight and THEN cut, while it's still burning, and the fire seals every stump. That's the trick. That's the whole trick. Don't forget the trick.",
+  ],
+  dragon: [
+    "CINDER, THE OLD FLAME. A red dragon curled on a bed of cooling slag, scales like a forge's worth of horseshoes, breath that smells like a struck match the size of a church. When it takes a deep breath, everything it can see turns to fire. So don't let it see you. Pillars. Get behind the pillars.",
+    "A dragon. An actual dragon, God help us, with an eye like a lava lake and a temper to match. It hates the cold the way old men hate draughts. After it breathes, it pants, it sags, it's slow. That is when you hit it. That is the only time you hit it.",
+  ],
+  lich: [
+    "KING AUREX THE UNDYING. Once he ruled everything you can see from the top of the mountain. Then he wanted more: he wanted ALWAYS. He sealed himself in here with a stone that beats like a heart and he has been dead, and refusing to be, ever since. He casts slowly. He tells you, with his hands and his eyes, exactly what he's about to do. Listen.",
+    "A dead king, thin as a coat on a hook, crowned in tarnished gold, eyes two pinpricks of violet light. Black light gathers on his finger: break his line of sight. Frost sigils spread under your feet: move. He has had a thousand years to be clever. You've had five floors. Be clever faster.",
+  ],
+});
+Object.assign(GONZO.items, {
+  mana: [
+    "A mana potion, deep blue, fizzing like a shaken soda. One swallow and the battery behind your eyes lights back up. It tastes the way a thunderstorm smells.",
+  ],
+  specs: [
+    "A pair of small round spectacles, wire-framed, one lens cracked, the other polished to perfection. A goblin wore these. Now they need to go home to the old man's nose, where they belong.",
+  ],
+  lily: [
+    "A moonlily, floating on black water, glowing faintly white like somebody left a lamp on. It smells of summer evenings in a garden you've never been to. The old man wants three, for a dead woman's tea.",
+  ],
+  hammer: [
+    "An old hammer, worn smooth where a hand held it for fifty years. It's been on this island of hot rock for thirty of them and it hasn't so much as warped. Some tools are just stubborn. So are some men.",
+  ],
+  tome: [
+    "A spellbook, bound in the hide of something that didn't want to be bound, humming with a power that makes your fillings ache. The boss was sitting on it. Bosses always are. Step on it. Read it. Become a little more dangerous.",
+  ],
+  stone: [
+    "THE IMMORTALITY STONE. Smaller than you thought. Warm. Beating, very slowly, like a heart with all the time in the world. Kings have killed for it. A king died for it, and then refused to stay dead. It is the most valuable thing in the world and it fits in your hand and it is, somehow, a little bit lonely.",
+  ],
+});
+Object.assign(GONZO.states, {
+  specs: "Perched on its nose: a pair of small round spectacles, much too fine for a goblin. That's the old man's. That's the old man's and it's wearing them.",
+  charging: "It is DRAWING BREATH. Its chest glows like a furnace door. Whatever it can see in a moment is going to burn. Get behind something solid. Now.",
+  spent: "It's exhausted: sagging, panting, smoke curling from its jaws. This is the moment. This is the only moment. Hit it with everything.",
+});
+GONZO.tomes = {
+  fire: [
+    "FIRE. The book bursts open in your hands and the words climb up your arms like sparks on dry paper. Now you can throw a ball of roaring orange that keeps burning after it lands. It lights torches. It clears brambles. It sets things that hate fire on fire. Grukka kept it under her pillow. I don't want to know why.",
+  ],
+  lightning: [
+    "LIGHTNING. The pages crackle and every hair on your body stands up to see what's going on. Now you can throw a bolt of the sky's own bad temper. It hits everything in a line, and if it touches water, the WHOLE POOL lights up and everything in it learns a lesson. Including you, if you're standing in it.",
+  ],
+  frost: [
+    "FROST. The book frosts over in your hands and the cold goes straight into your bones and stays there, comfortable, like a cat. Now you can freeze. Monsters freeze solid and shatter when struck. Water becomes a bridge. Lava becomes a road. Even a dragon slows down for a moment.",
+  ],
+};
+GONZO.tomeFacts = {
+  fire:'Press 1, then aim. Burns over time, lights torches, clears brambles and webs.',
+  lightning:'Press 2, then aim. Electrifies whole pools of water. Shatters ice walls.',
+  frost:'Press 3, then aim. Freezes monsters, water and lava. Frozen things are easy to hit, and take double from blades.',
+};
+GONZO.endings = {
+  keep: "And so you kept it: forever, warm in your pocket, beating slowly. You will see a great many fires. You will sit by most of them. You will ask the people there a question, and you will listen to the answer, all the way to the end, because you have the time. Somewhere, a kettle is on. There always will be.",
+  give: "You offered forever to an old man, and he laughed, and gave it back, and the two of you climbed a very great many stairs together, slowly, because of his knees. You don't remember what you did with the stone in the end. You remember the climb. You remember every word.",
+  leave: "You left forever on the floor of a dead king's tomb, still beating, all on its own. Then you climbed back up into the daylight with an old man who talks too much, and it was the best decision you ever made, and you knew it at the time, which almost never happens.",
+};
+
+// ---- the fourth spell, from the dragon's hoard
+GONZO.tomes.holy = [
+  "HOLY. The book is warm, warmer than the dragon that sat on it, and when it opens there is a sound like a great many people a very long way off, all singing the same note. Now you can call down light: a pillar of it, falling from somewhere impossibly high. The living feel it like sun on the back of the neck. The dead BURN.",
+];
+GONZO.tomeFacts.holy = 'Press 4, then aim. A pillar of light: undead in it burn, and keep burning for a few turns. The living are unharmed.';
+GONZO.hud.holy = [
+  "HOLY: light from above, the real thing, the kind painters spend whole lives failing to get right. It does nothing to the living but warm them. To the dead it is a verdict. The tomb is full of the dead. Do the arithmetic.",
+  "The fourth spell. Skeletons, zombies, spectres, knights in armour that laughs at fire: none of them have an answer for this. Neither, I suspect, does the king.",
+];

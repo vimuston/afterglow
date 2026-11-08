@@ -273,7 +273,7 @@ const Snd = (() => {
       tone({type:'pulse', duty:.25, f:1319, t:ac.currentTime + .07, a:.002, d:.35, vol:.08, echo:.4}); } },
     potion(){ if (on()) arp([523,659,784,1047,1319], .05, {type:'triangle', d:.14, vol:.08, echo:.3}); },
     scroll(){ if (on()) arp([784,988,1175,1568,1976], .06, {type:'pulse', duty:.2, pwm:3, d:.25, vol:.05, echo:.5, rev:.5}); },
-    select(k){ if (!on()) return; const f = {1:1568, 2:880, 3:1319}[k] || 1000;
+    select(k){ if (!on()) return; const f = {lightning:1568, fire:880, frost:1319}[k] || 1000;
       tone({type:'pulse', duty:.25, f, d:.04, vol:.06}); tone({type:'pulse', duty:.25, f:f*1.5, t:ac.currentTime + .045, d:.06, vol:.05}); },
     blip(){ if (on()) tone({type:'triangle', f:1046, d:.04, vol:.05}); },
     cancel(){ if (on()) tone({type:'triangle', f:660, f2:330, slide:.08, d:.09, vol:.06}); },
@@ -322,6 +322,24 @@ const Snd = (() => {
     zone(){ if (on()) arp([392, 523, 659], .12, {type:'triangle', d:.6, vol:.035, echo:.6, rev:.6}); },
     page(){ if (on()) tone({type:'triangle', f:784, d:.05, vol:.035}); },
     win(){ if (!on()) return; arp([523,659,784,1047,1319,1568], .09, {type:'pulse', duty:.25, pwm:2, d:.35, vol:.08, echo:.5}); },
+    // a critical hit: a bright steel ring over a hard thump
+    crit(){ if (!on()) return; const t = ac.currentTime;
+      tone({type:'noise', rate:1.6, filt:'highpass', f0:2500, a:.001, d:.12, vol:.22});
+      tone({type:'sine', f:140, f2:45, slide:.18, a:.002, d:.3, vol:.42});
+      tone({type:'pulse', duty:.125, f:1760, t:t + .02, a:.002, d:.5, vol:.07, echo:.6, rev:.5});
+      tone({type:'pulse', duty:.125, f:2637, t:t + .07, a:.002, d:.45, vol:.05, echo:.6, rev:.5}); },
+    // a little choir: formant-filtered saws on a bright major chord, slow to swell, long to fade
+    choir(){ if (!on()) return; const t = ac.currentTime;
+      [220, 277.2, 329.6, 440, 554.4, 659.3].forEach((f, i) => [-7, 7].forEach(dt => tone({type:'sawtooth', f, detune:dt + (Math.random() - .5) * 6,
+        t:t + i * .045, a:.35, d:.6, s:.7, dur:1.3, r:.9, vol:.028, vib:.006, filt:'bandpass', f0:i % 2 ? 1150 : 820, q:3.5, rev:.9, echo:.3})));
+      [1760, 2217, 2637, 3520].forEach((f, i) => tone({type:'triangle', f, t:t + .25 + i * .09, a:.01, d:.9, vol:.02, echo:.6, rev:.8}));
+      tone({type:'noise', rate:.5, filt:'bandpass', f0:3000, q:.6, t, a:.4, d:1.2, dur:1, vol:.04, rev:.6}); },
+    miss(){ if (on() && can('miss', 50)) tone({type:'noise', rate:1.6, filt:'bandpass', f0:2400, f1:5200, q:2, a:.01, d:.05, dur:.06, vol:.05}); },
+    roar(){ if (!on()) return; const t = ac.currentTime;
+      tone({type:'sawtooth', f:75, f2:48, slide:1, a:.12, d:1.1, s:.6, dur:.9, r:.4, vol:.16, vib:.04, filt:'lowpass', f0:900, f1:300, q:3, rev:.6});
+      tone({type:'noise', rate:.3, filt:'bandpass', f0:500, q:1, t, a:.15, d:1, vol:.18, rev:.5}); },
+    charge(){ if (on()) tone({type:'noise', rate:.6, filt:'bandpass', f0:300, f1:1800, q:2, a:.5, d:.4, dur:.7, vol:.14}); },
+    poison(){ if (on() && can('poison', 200)) tone({type:'triangle', f:330, f2:220, slide:.15, a:.01, d:.18, vol:.05, vib:.05}); },
     gameover(){ if (!on()) return; arp([392,330,262,196,131], .22, {type:'pulse', duty:.4, a:.01, d:.4, vol:.1, filt:'lowpass', f0:1500, f1:300, echo:.4}); },
   };
   return {start, cycle, label, ambient, tone2, _offline, ...fx};

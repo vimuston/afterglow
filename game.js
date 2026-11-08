@@ -3,66 +3,182 @@
 //  State
 // =====================================================================
 const SPELLS = {
-  '1': {name:'Lightning', cost:5, range:12, col:[.6,.8,1.0]},
-  '2': {name:'Fire',      cost:4, range:9,  col:[1.0,.5,.15], stopAtEnt:1},
-  '3': {name:'Frost',     cost:4, range:8,  col:[.55,.9,1.0]},
+  '1': {id:'fire',      name:'Fire',      cost:4, range:9,  col:[1.0,.5,.15], stopAtEnt:1},
+  '2': {id:'lightning', name:'Lightning', cost:5, range:12, col:[.6,.8,1.0]},
+  '3': {id:'frost',     name:'Frost',     cost:4, range:8,  col:[.55,.9,1.0]},
+  '4': {id:'holy',      name:'Holy',      cost:6, range:10, col:[1.0,.9,.55], stopAtEnt:1},
 };
 const cost = k => Math.max(1, SPELLS[k].cost - (state.costDown || 0));
+const knows = k => !!state.spells[SPELLS[k].id];
+const spellKey = id => Object.keys(SPELLS).find(k => SPELLS[k].id === id);
 
-let fire, elecT, frostT, seen, vis, lumS, lr, lg, lb, snowAcc;
-let ents, player, npc, items, parts, wparts, bolts, projs, flashes, lights, msgs, state, dying, flies;
-let shakeAmp = 0, phosphor = 0;
+// ---- weapons: three kinds, and Eli's stock gets better on every floor
+const WEAPONS = {
+  dagger: {name:'dagger', lo:1, hi:4, hit:3,  crit:18, mult:2, style:'stab',   price:10, note:'quick and precise · crits on 18-20'},
+  sword:  {name:'sword',  lo:2, hi:6, hit:1,  crit:19, mult:2, style:'cleave', price:16, note:'balanced · crits on 19-20'},
+  axe:    {name:'axe',    lo:3, hi:8, hit:-1, crit:20, mult:3, style:'cleave', price:20, note:'heavy and wild · crits hit ×3'},
+};
+const TIERS = ['', 'old', 'iron', 'steel', 'dwarf-forged', 'starmetal'];
+function weaponStats(w = state.weapon){
+  if (!w) return {name:'bare hands and tail', lo:1, hi:3, hit:0, crit:20, mult:2, style:'whip', note:'better than nothing, barely'};
+  const B = WEAPONS[w.type], t = w.tier;
+  return {name:`${TIERS[t]} ${B.name}`, lo:B.lo + 2 * (t - 1), hi:B.hi + 2 * (t - 1), hit:B.hit + (t - 1), crit:B.crit, mult:B.mult,
+          style:B.style, note:B.note, price:Math.round(B.price * (1 + 1.6 * (t - 1)))};
+}
+const PLAYER_HIT = 4;
+const playerHit = () => PLAYER_HIT + weaponStats().hit;
+// ---- armour: no dodging, just a number your enemies have to beat
+const GIFTS = [null,
+  {slot:'body',  name:'leather jerkin',  ac:2},
+  {slot:'head',  name:'fur-lined hood',  ac:1},
+  {slot:'body',  name:'chain shirt',     ac:4},
+  {slot:'head',  name:'iron helm',       ac:2},
+  {slot:'cloak', name:'starweave cloak', ac:3},
+];
+const SLOTS = ['body', 'head', 'cloak'];
+const playerAC = () => 10 + (state.acBonus || 0) + SLOTS.reduce((a, k) => a + (state.gear[k]?.ac || 0), 0);
+const PRICES = {potion:12, mana:10};
+const POTION_HEAL = 15, MANA_GAIN = 12;
+
+let farv, fire, elecT, frostT, seen, vis, lumS, lr, lg, lb, snowAcc, danger;
+let ents, player, npc, items, parts, wparts, bolts, projs, flashes, lights, msgs, state, dying, flies, slashes, pillars = [];
+let level = null;
+let shakeAmp = 0, phosphor = 0, hitStop = 0, screenFlashT = -1e9;
 const PHOS = [ {name:'COLOR', tint:[1,1,1], mono:0} ];
 let hover = null, hoverAny = null;
 const W = {rain:0, snow:0, wind:0, dir:1};    // smoothed weather intensities
 
-function mkEnt(type, x, y){
-  const d = MONS[type];
+function mkEnt(type, x, y, extra){
+  const d = MONS[type], lv = state?.floor || 1;
   const e = {type, ch:d.ch, name:d.name, col:d.col.slice(), hp:d.hp, maxhp:d.hp, dmg:d.dmg,
-             x, y, vx:x, vy:y, anim:null, act:null, knock:null, hitT:-1e9, burning:0, frozen:0, dead:false, seen:null,
-             face:rnd() < .5 ? 1 : -1, seed:rnd() * 100, sz:1, tf:{ox:0, oy:0, rot:0, sx:1, sy:1}};
-  // individual variety
-  const r = rnd();
-  if (r < .2) { e.name = 'big ' + e.name; e.hp = e.maxhp = Math.ceil(d.hp * 1.5); e.dmg = d.dmg + 1; e.sz = 1.16; }
-  else if (r < .35) { e.name = 'scrawny ' + e.name; e.hp = e.maxhp = Math.max(1, Math.floor(d.hp * .7)); e.sz = .88; }
-  const v = .88 + rnd() * .24; e.col = e.col.map((c, i) => clamp(c * (i === 1 ? v : 2 - v), 0, 1));
+             x, y, vx:x, vy:y, anim:null, act:null, knock:null, hitT:-1e9, burning:0, frozen:0, poison:0, dead:false, seen:null,
+             face:rnd() < .5 ? 1 : -1, seed:rnd() * 100, sz:1, s:d.s || 1, ac:d.ac ?? 9 + lv, hit:d.hit ?? 1 + lv,
+             tf:{ox:0, oy:0, rot:0, sx:1, sy:1}};
+  if (d.boss) { e.boss = true; e.sz = e.s > 1 ? 2 : 1.3; e.pt = 4; e.cd = 2; if (d.hydra) { e.heads = 3; e.stumps = 0; } }
+  else if (!extra) {
+    // individual variety
+    const r = rnd();
+    if (r < .2) { e.name = 'big ' + e.name; e.hp = e.maxhp = Math.ceil(d.hp * 1.5); e.dmg = d.dmg + 1; e.sz = 1.16; }
+    else if (r < .35) { e.name = 'scrawny ' + e.name; e.hp = e.maxhp = Math.max(1, Math.floor(d.hp * .7)); e.sz = .88; }
+  }
+  const v = .88 + rnd() * .24; if (!d.boss) e.col = e.col.map((c, i) => clamp(c * (i === 1 ? v : 2 - v), 0, 1));
+  if (extra) Object.assign(e, extra);
   return e;
 }
 
+// ---- a whole new run
 function init(){
-  const W0 = buildWorld();
-  const N = MW * MH;
-  fire = new Int8Array(N); elecT = new Float64Array(N).fill(-1e9); frostT = new Float64Array(N).fill(-1e9);
-  seen = new Uint8Array(N); vis = new Uint8Array(N); lumS = new Float32Array(N);
-  lr = new Float32Array(N); lg = new Float32Array(N); lb = new Float32Array(N);
-  snowAcc = new Float32Array(N);
-  for (let i = 0; i < N; i++) if (zone[i] === Z.PASS) snowAcc[i] = .85;
-  parts = []; wparts = []; bolts = []; projs = []; flashes = []; msgs = []; dying = []; flies = [];
-  state = {turn:0, targeting:null, dead:false, won:false, gold:0, travel:null, zone:-1, costDown:0, armor:0, belief:false,
+  dlg = null; inspect = null; packOpen = false;
+  state = {turn:0, floor:1, seed:(rnd() * 1e9) | 0, targeting:null, dead:false, won:false, gold:20, travel:null, zone:-1,
+           costDown:0, acBonus:0, belief:false, spells:{}, inv:{potion:1, mana:0}, keys:{}, weapon:null, gear:{}, quest:{}, eggs:0,
            weather:{type:'clear', until:30}, thunderT:-1e9,
            mem:{name:'friend', ch:0, lastTalk:-99, met:false, visited:{}, kills:0, idleI:0, echoUsed:{}, nextEcho:0, called:false}};
-  dlg = null;
-  player = mkEnt('rat', ...W0.start);
-  Object.assign(player, {ch:'@', name:'you', col:[1,1,.85], hp:24, maxhp:24, mp:20, maxmp:20, dmg:0, sz:1, isPlayer:true});
-  npc = mkEnt('rat', ...W0.npc);
-  Object.assign(npc, {ch:'@', name:'old man', col:[.86,.8,1], hp:99, maxhp:99, sz:1, npc:true, face:1});
-  ents = [player, npc];
-  for (const [t, x, y] of W0.spawns) ents.push(mkEnt(t, x, y));
-  items = W0.items.map(o => ({...o}));
-  altars = {}; for (const a of W0.altars || []) altars[idx(a.x, a.y)] = a.deity;
-  CX = clamp(player.x + .5 - WVW / 2, 0, MW - WVW); CY = clamp(player.y + .5 - WVH / 2, 0, MH - WVH);
-
-  log('AFTERGLOW // somewhere, a kettle is on', [.6,1,.7]);
-  log('Move: keys/click. Click @ to wait. Right-click cancels', [.55,.7,.55]);
-  log('Cast: 1/2/3 or click a spell, then aim with keys/mouse', [.55,.7,.55]);
-  rebuildLights(); computeFOV(); checkZone();
+  msgs = [];
+  player = mkEnt('rat', 0, 0);
+  Object.assign(player, {ch:'@', name:'you', col:[1,1,.85], hp:24, maxhp:24, mp:20, maxmp:20, dmg:0, sz:1, s:1, isPlayer:true});
+  log('AFTERGLOW // somewhere below, a stone that never dies', [.6,1,.7]);
+  log('Move: keys/click. Right-click inspects. I: pack', [.55,.7,.55]);
+  enterLevel(1);
 }
+// what you carry from floor to floor; also what comes back when you fall and try the floor again
+const SNAP_KEYS = ['gold', 'costDown', 'acBonus', 'belief', 'spells', 'inv', 'keys', 'weapon', 'gear', 'quest', 'mem', 'prayed', 'eggs'];
+function snapshot(){
+  const P = player, o = {p:{hp:P.hp, maxhp:P.maxhp, mp:P.mp, maxmp:P.maxmp}, s:{}};
+  for (const k of SNAP_KEYS) o.s[k] = state[k];
+  state.snap = JSON.stringify(o);
+}
+function retryFloor(){
+  const o = JSON.parse(state.snap);
+  Object.assign(state, o.s, {dead:false, travel:null, targeting:null});
+  player = mkEnt('rat', 0, 0);
+  Object.assign(player, {ch:'@', name:'you', col:[1,1,.85], dmg:0, sz:1, s:1, isPlayer:true}, o.p);
+  inspect = null; dlg = null; packOpen = false;
+  log('You wake at the top of the stairs, aching, alive. Again.', [1,.85,.6]);
+  enterLevel(state.floor, true);
+}
+// fresh per-floor buffers (shared by a new floor and a loaded save)
+function allocLevel(n){
+  const N = MW * MH, z = n - 1;
+  zone = new Uint8Array(N).fill(z);
+  fire = new Int8Array(N); elecT = new Float64Array(N).fill(-1e9); frostT = new Float64Array(N).fill(-1e9);
+  seen = new Uint8Array(N); vis = new Uint8Array(N); farv = new Uint8Array(N); lumS = new Float32Array(N); danger = new Uint8Array(N);
+  lr = new Float32Array(N); lg = new Float32Array(N); lb = new Float32Array(N);
+  snowAcc = new Float32Array(N);
+  if (z === Z.PASS) snowAcc.fill(.85);
+  parts = []; wparts = []; bolts = []; projs = []; flashes = []; dying = []; flies = []; slashes = []; pillars = [];
+}
+function enterLevel(n, retry){
+  state.floor = n;
+  level = buildLevel(n, state.seed);
+  allocLevel(n);
+  const P = player;
+  [P.x, P.y] = level.start; P.vx = P.x; P.vy = P.y; P.anim = P.act = P.knock = null;
+  P.burning = P.frozen = P.poison = P.webbed = 0; P.dead = false;
+  npc = mkEnt('rat', ...level.npc);
+  Object.assign(npc, {ch:'@', name:'old man', col:[.86,.8,1], hp:99, maxhp:99, sz:1, s:1, npc:true, face:-1, home:level.npc.slice()});
+  ents = [player, npc];
+  for (const [t, x, y, ex] of level.spawns) ents.push(mkEnt(t, x, y, ex));
+  items = level.items.map(o => ({...o}));
+  altars = {}; for (const a of level.altars) altars[idx(a.x, a.y)] = a.deity;
+  state.zone = -1; state.targeting = null; state.travel = null; state.bossSeen = false;
+  if (!state.quest || state.quest.floor !== n) state.quest = {floor:n, stage:0};
+  CX = clamp(P.x + .5 - WVW / 2, 0, MW - WVW); CY = clamp(P.y + .5 - WVH / 2, 0, MH - WVH);
+  if (!retry) snapshot();
+  rebuildLights(); computeFOV(); checkZone();
+  saveGame();
+  if (n > 1 && !retry) log(state.mem.knowsName ? 'Eli is already here, warming his hands. Of course he is.' : 'The old man is already here, warming his hands. Of course he is.', [.85,.8,1]);
+}
+
+// ---- the run lives in this browser's localStorage, so a refresh picks up where you left off
+const SAVE_KEY = 'afterglow.save.v1';
+const EPHEMERAL = {anim:1, act:1, knock:1, tf:1};
+function saveGame(){
+  if (!state || !level || !map) return;
+  try {
+    const fl = []; for (let i = 0; i < fire.length; i++) if (fire[i]) fl.push(i, fire[i]);
+    const strip = e => { const o = {}; for (const k in e) if (!EPHEMERAL[k]) o[k] = e[k]; return o; };
+    localStorage.setItem(SAVE_KEY, JSON.stringify({v:1, state:{...state, travel:null, targeting:null}, level, map, under, fire:fl,
+      seen:Array.from(seen).join(''), ents:ents.filter(e => !e.dead || e.isPlayer).map(strip), items, altars, msgs:msgs.slice(-12)}));
+  } catch (e) { /* private mode or full storage: just don't save */ }
+}
+function clearSave(){ try { localStorage.removeItem(SAVE_KEY); } catch (e) {} }
+function loadGame(){
+  let d; try { d = JSON.parse(localStorage.getItem(SAVE_KEY)); } catch (e) { return false; }
+  if (!d || d.v !== 1) return false;
+  try {
+    state = Object.assign(d.state, {thunderT:-1e9, npcSpark:0}); level = d.level;
+    allocLevel(level.n);
+    map = d.map; under = d.under;
+    for (let k = 0; k < d.fire.length; k += 2) fire[d.fire[k]] = d.fire[k + 1];
+    for (let i = 0; i < d.seen.length; i++) seen[i] = d.seen.charCodeAt(i) === 49 ? 1 : 0;
+    ents = d.ents.map(e => ({...e, vx:e.x, vy:e.y, anim:null, act:null, knock:null, hitT:-1e9, tf:{ox:0, oy:0, rot:0, sx:1, sy:1}}));
+    player = ents.find(e => e.isPlayer); npc = ents.find(e => e.npc);
+    if (!player || !npc) throw new Error('bad save');
+    items = d.items; altars = d.altars; msgs = d.msgs || [];
+    dlg = null; inspect = null; packOpen = false;
+    CX = clamp(player.x + .5 - WVW / 2, 0, MW - WVW); CY = clamp(player.y + .5 - WVH / 2, 0, MH - WVH);
+    rebuildLights(); computeFOV(); computeDanger();
+    log('You pick up where you left off.', [.6,1,.7]);
+    return true;
+  } catch (e) { console.warn('could not load save', e); clearSave(); return false; }
+}
+addEventListener('pagehide', saveGame);
 
 function log(text, col = [.7,.85,.7]){ msgs.push({text, col}); if (msgs.length > 40) msgs.shift(); }
 function healPlayer(n, quiet){
   const P = player, before = P.hp; P.hp = Math.min(P.maxhp, P.hp + n);
   if (P.hp > before) part(P.x, P.y - .3, 0, -1.2, .9, '+' + (P.hp - before), [.5,1,.6], 1);
   if (!quiet && P.hp > before) Snd.potion();
+}
+function quaff(kind){
+  const P = player;
+  if (state.dead || state.won || projs.length) return;
+  if (!(state.inv[kind] > 0)) { Snd.error(); log(kind === 'potion' ? 'You have no healing potions.' : 'You have no mana potions.', [.8,.5,.5]); return; }
+  state.inv[kind]--;
+  if (kind === 'potion') { healPlayer(POTION_HEAL, true); P.poison = 0; log('You drink a healing potion. Warmth spreads to your fingertips.', [1,.5,.6]); }
+  else { P.mp = Math.min(P.maxmp, P.mp + MANA_GAIN); part(P.x, P.y - .3, 0, -1.2, .9, '+' + MANA_GAIN, [.5,.7,1], 1); log('You drink a mana potion. Your thoughts fizz.', [.6,.7,1]); }
+  Snd.potion(); packOpen = false;
+  endTurn();
 }
 
 // =====================================================================
@@ -81,7 +197,6 @@ function tickWeather(){
   w.type = next; w.until = state.turn + ri(35, 75); W.dir = rnd() < .5 ? -1 : 1;
   const z = zone[idx(player.x, player.y)];
   if (ZONES[z].outdoor) log(WMSG[next], [.7,.8,.9]);
-  else if (z === Z.HOUSE && next !== 'clear') log(next === 'storm' ? 'Thunder grumbles over the roof.' : 'You hear the weather change outside.', [.6,.65,.7]);
 }
 // intensities as felt in a given zone
 function localW(z){
@@ -139,7 +254,10 @@ function rebuildLights(){
     for (let x = Math.max(0, P.x - R); x <= Math.min(MW - 1, P.x + R); x++) {
       const i = idx(x, y), t = map[i];
       if (t === 'TORCH') addLight(x, y, 10, [1,.62,.3], 1.5, 1);
-      else if (t === 'HEARTH') addLight(x, y, 9, [1,.58,.28], 1.6, 1);
+      else if (t === 'HEARTH' || t === 'CAMPFIRE') addLight(x, y, 9, [1,.58,.28], 1.6, 1);
+      else if (t === 'RUNELIT') addLight(x, y, 7, [.55,.8,1], 1.4, 1);
+      else if (t === 'GRAVEDONE') addLight(x, y, 4, [1,.7,.8], .8, 1);
+      else if (t === 'EGGSAC') addLight(x, y, 2.5, [.8,.75,.5], .35, 1);
       else if (t === 'LAVA' && hash(i) < .4) addLight(x, y, 4, [1,.38,.1], .7, 2);
       else if (t === 'VENT') addLight(x, y, 3, [1,.5,.2], .6, 2);
       else if (t === 'ALTAR') { const D = altarDeity(i); addLight(x, y, 6, D ? D.col : [1,.8,.5], 1.3, 1); }
@@ -148,7 +266,8 @@ function rebuildLights(){
   for (const e of ents) {
     if (e.dead || cheb(e, P) > R) continue;
     if (e.burning > 0) addLight(e.x, e.y, 3, [1,.5,.15], .7, 2);
-    const g = MONS[e.type]?.glow; if (g && !e.npc && !e.isPlayer) addLight(e.x, e.y, 3.5, g, .8, 1);
+    const g = MONS[e.type]?.glow; if (g && !e.npc && !e.isPlayer) addLight(e.x, e.y, e.boss ? 6 : 3.5, g, e.boss ? 1.2 : .8, 1);
+    if (e.phase === 'charge') addLight(e.x, e.y, 5 + (3 - e.pt) * 2, [1,.45,.12], 1 + (3 - e.pt) * .5, 2);
   }
   if (!P.dead) state.belief ? addLight(P.x, P.y, 7.5, [1,.85,.55], 1.05, 0) : addLight(P.x, P.y, 6, [.5,.58,.5], .85, 0);
   lumS.fill(0);
@@ -158,14 +277,19 @@ function rebuildLights(){
 }
 function flash(x, y, r, col, int, dur){ flashes.push({col, int, dur, t0:now(), c:computeContribs(x, y, r)}); }
 
+// you see clearly in a circle of SIGHT tiles: everything (and everyone) in it.
+// Past that, lit places in line of sight show only as dim shapes, and no monsters.
+const SIGHT = 7.3;
+const sightD = (x, y) => Math.hypot(x - player.x, y - player.y);
 function computeFOV(){
-  vis.fill(0);
+  vis.fill(0); farv.fill(0);
   const P = player, R = 31;
   for (let y = Math.max(0, P.y - R); y <= Math.min(MH - 1, P.y + R); y++)
     for (let x = Math.max(0, P.x - R); x <= Math.min(MW - 1, P.x + R); x++) {
       if (los(P.x, P.y, x, y)) {
-        const i = idx(x, y); vis[i] = 1;
-        if (lumS[i] > .07 || Math.max(Math.abs(x-P.x), Math.abs(y-P.y)) <= 4) seen[i] = 1;
+        const i = idx(x, y);
+        if (sightD(x, y) <= SIGHT) { vis[i] = 1; seen[i] = 1; }
+        else if (lumS[i] > .07) { farv[i] = 1; seen[i] = 1; }
       }
     }
 }
@@ -176,10 +300,17 @@ function dayLight(z){
   const base = z === Z.MIRE ? .3 : z === Z.PASS ? .5 : .55;
   return base * (1 - .35 * W.rain - .15 * W.snow);
 }
-const DAYCOL = {[Z.MEADOW]:[.92,.95,1], [Z.MIRE]:[.75,.9,.72], [Z.PASS]:[.85,.9,1.05]};
+const DAYCOL = {[Z.MIRE]:[.75,.9,.72], [Z.PASS]:[.85,.9,1.05]};
 const AMB = .03;
 function computeLight(t, tn){
   lr.fill(AMB); lg.fill(AMB); lb.fill(AMB);
+  // inside your circle of sight the world is lighter, fading off at the rim
+  { const P = player, R = Math.ceil(SIGHT);
+    for (let y = Math.max(0, P.y - R); y <= Math.min(MH - 1, P.y + R); y++) for (let x = Math.max(0, P.x - R); x <= Math.min(MW - 1, P.x + R); x++) {
+      const i = idx(x, y); if (!vis[i]) continue;
+      const k = .07 + .17 * (1 - smooth(SIGHT - 2.5, SIGHT + .3, Math.hypot(x - P.vx, y - P.vy)));
+      lr[i] += k; lg[i] += k * .97; lb[i] += k * .9;
+    } }
   const x0 = Math.max(0, Math.floor(CX) - 1), x1 = Math.min(MW - 1, Math.floor(CX) + WVW + 1);
   const y0 = Math.max(0, Math.floor(CY) - 1), y1 = Math.min(MH - 1, Math.floor(CY) + WVH + 1);
   const th = tn - state.thunderT, thunder = th < 700 ? Math.exp(-th / 90) * 1.6 + (th > 160 ? Math.exp(-(th - 160) / 120) * 1.2 : 0) : 0;
@@ -216,7 +347,14 @@ function computeLight(t, tn){
 // =====================================================================
 //  Animation: moves, attacks, idles
 // =====================================================================
-const entAt = (x, y) => ents.find(e => !e.dead && e.x === x && e.y === y);
+// entities can be bigger than one tile (the bosses are 2x2); e.x/e.y is the top-left corner
+const covers = (e, x, y) => x >= e.x && y >= e.y && x < e.x + e.s && y < e.y + e.s;
+const entAt = (x, y) => ents.find(e => !e.dead && covers(e, x, y));
+const cellsOf = e => { const c = []; for (let j = 0; j < e.s; j++) for (let i = 0; i < e.s; i++) c.push([e.x + i, e.y + j]); return c; };
+const ctr = e => [e.x + (e.s - 1) / 2, e.y + (e.s - 1) / 2];
+// the cell of a big entity nearest to a point
+const nearCell = (e, x, y) => [clamp(x, e.x, e.x + e.s - 1), clamp(y, e.y, e.y + e.s - 1)];
+const losE = (m, x, y) => cellsOf(m).some(([cx, cy]) => los(cx, cy, x, y));
 const easeOutBack = p => { const c1 = 1.4, c3 = c1 + 1; return 1 + c3*Math.pow(p-1,3) + c1*Math.pow(p-1,2); };
 const S = Math.sin, PI = Math.PI;
 
@@ -327,94 +465,216 @@ function updateEnt(e, t, tn){
   e.vx = x; e.vy = y; e.tf = T;
 }
 
-function part(x, y, vx, vy, life, ch, col, g = 0, delay = 0){ if (parts.length < 1400) parts.push({x, y, vx, vy, life, max:life, ch, col, g, d:delay}); }
+function part(x, y, vx, vy, life, ch, col, g = 0, delay = 0, big = false){ if (parts.length < 1400) parts.push({x, y, vx, vy, life, max:life, ch, col, g, d:delay, big}); }
 function ember(x, y, col = [1,.55,.15]){ part(x + (rnd()-.5)*.6, y - .2, (rnd()-.5)*.4, -1 - rnd()*1.2, .5 + rnd()*.6, rnd()<.5?'.':'\'', col, -.3); }
 function steam(x, y){ Snd.sizzle(); for (let k = 0; k < 6; k++) part(x + (rnd()-.5)*.8, y, (rnd()-.5)*.6, -.6 - rnd()*.8, .8 + rnd()*.6, rnd()<.5?'°':'.', [.8,.85,.9], -.2); }
 function frostBits(x, y){ for (let k = 0; k < 4; k++) part(x + (rnd()-.5)*.8, y + (rnd()-.5)*.8, (rnd()-.5)*.8, (rnd()-.5)*.8, .6 + rnd()*.5, rnd()<.5?'*':'·', [.7,.95,1]); }
 function sparks(x, y, n = 4){ for (let k = 0; k < n; k++) { const a = rnd()*PI*2, s = 2 + rnd()*4; part(x, y, Math.cos(a)*s, Math.sin(a)*s, .25 + rnd()*.3, rnd()<.5?'+':'·', [.85,.92,1], 4); } }
 function shatter(e){
-  const chars = [e.ch, '.', ',', '\'', '`', ':'];
-  for (let k = 0; k < 18; k++) { const a = rnd()*PI*2, s = 1 + rnd()*4;
-    part(e.x, e.y, Math.cos(a)*s, Math.sin(a)*s - 1.5, .6 + rnd()*.7, chars[ri(0, chars.length-1)], e.col, 7); }
+  const chars = [e.ch, '.', ',', '\'', '`', ':'], [cx, cy] = ctr(e);
+  for (let k = 0; k < 18 * e.s * e.s; k++) { const a = rnd()*PI*2, s = 1 + rnd()*4 * e.s;
+    part(cx + (rnd() - .5) * (e.s - 1), cy + (rnd() - .5) * (e.s - 1), Math.cos(a)*s, Math.sin(a)*s - 1.5, .6 + rnd()*.7, chars[ri(0, chars.length-1)], e.col, 7); }
 }
 function shake(a){ shakeAmp = Math.max(shakeAmp, a); }
 
-function damage(e, n, src, delay = 0, from = null){
+function damage(e, n, src, delay = 0, from = null, crit = false){
   if (e.dead) return;
   if (e.npc) {
     if (src !== 'melee' && now() - (state.npcSpark || 0) > 3000) { state.npcSpark = now();
-      log('The old man brushes a spark off his sleeve. "Careful, now."', [.8,.75,1]); }
+      log(`${state.mem.knowsName ? 'Eli' : 'The old man'} brushes a spark off his sleeve. "Careful, now."`, [.8,.75,1]); }
     return;
   }
-  const D = MONS[e.type] || {};
-  if (!e.isPlayer && D.immune?.[src]) { part(e.x, e.y - .3, 0, -1, .9, 'immune', [.7,.7,.7], .5, delay / 1000); return; }
+  const D = MONS[e.type] || {}, [cx, cy] = ctr(e);
+  if (src === 'holy' && (e.isPlayer || !D.undead)) { if (!e.isPlayer) part(cx, cy - .3, 0, -1, .9, 'unharmed', [1,.9,.6], .5, delay / 1000); return; }
+  if (!e.isPlayer && D.hydra) { hydraHit(e, n, src, delay, crit); return; }
+  if (!e.isPlayer && D.immune?.[src]) { part(cx, cy - .3 - (e.s - 1) * .5, 0, -1, .9, 'immune', [.7,.7,.7], .5, delay / 1000); return; }
   if (!e.isPlayer && D.weak?.[src]) n *= D.weak[src];
-  if (e.isPlayer && src === 'melee') n = Math.max(1, n - (state.armor || 0));
+  if (e.spent) n = Math.ceil(n * 1.5);
   e.hp -= n;
   const at = now() + delay;
   e.hitT = at;
   if (from) e.knock = {dx:Math.sign(e.x - from.x), dy:Math.sign(e.y - from.y), t0:at};
-  part(e.x, e.y - .3, (rnd()-.5)*.5, -1.6, .8, String(n), e.isPlayer ? [1,.3,.3] : [1,1,.8], 1.5, delay / 1000);
+  if (crit) part(cx, cy - .4, (rnd()-.5)*.4, -2, 1.1, String(n), [1,.9,.3], 1.5, delay / 1000, true);
+  else part(cx, cy - .3, (rnd()-.5)*.5, -1.6, .8, String(n), e.isPlayer ? [1,.3,.3] : [1,1,.8], 1.5, delay / 1000);
   if (delay) setTimeout(() => Snd.hit(!!e.isPlayer), delay); else Snd.hit(!!e.isPlayer);
   if (e.isPlayer) { setTimeout(() => shake(4), delay); if (state.travel && !state.travel.target) state.travel = null; }
+  if (e.boss && !e.awake) wake(e);
+  if (e.boss && D.title && !e.enraged && e.hp > 0 && e.hp < e.maxhp * .4 && e.type === 'matriarch') {
+    e.enraged = true; e.dmg += 2; setTimeout(() => { Snd.roar(); shake(6); }, delay);
+    log('Grukka bellows and froths. She is FURIOUS now, and hits harder.', [1,.45,.35]);
+  }
   if (e.hp <= 0) kill(e, src, delay);
+}
+// the hydra has no use for hit points: cut its heads off. Cut one without fire and two grow back.
+function hydraHit(e, n, src, delay, crit){
+  const [cx, cy] = ctr(e), at = now() + delay;
+  if (src === 'melee') {
+    const cut = Math.min(e.heads, crit ? 2 : 1);
+    e.heads -= cut; e.hitT = at;
+    for (let k = 0; k < 12; k++) part(cx + (rnd() - .5), cy - .8, (rnd() - .5) * 4, -1 - rnd() * 2, .7, pick(['§', ',', '\'', '~']), [.45,.85,.45], 6, delay / 1000);
+    if (e.burning > 0) {
+      log(cut > 1 ? 'Two heads fly, and the flames sear both stumps shut. Cauterized!' : 'A head flies, and the flames sear the stump shut. Cauterized!', [1,.75,.35]);
+      part(cx, cy - .6, 0, -1.2, 1, 'seared!', [1,.65,.25], .6, delay / 1000);
+    } else {
+      e.stumps += cut;
+      log(cut > 1 ? 'You lop off two heads! The stumps writhe and bulge...' : 'You lop off a head! The stump writhes and bulges...', [.6,1,.6]);
+      part(cx, cy - .6, 0, -1.2, 1, 'it writhes...', [.5,.9,.5], .6, delay / 1000);
+    }
+    if (delay) setTimeout(() => Snd.hit(false), delay); else Snd.hit(false);
+    if (e.heads <= 0) { e.hp = 0; kill(e, 'melee', delay); }
+  } else if (src === 'burn') {
+    if (rnd() < .4) part(cx, cy - .6, 0, -1, .8, 'singed', [1,.6,.3], .5, delay / 1000);
+  } else part(cx, cy - .6, 0, -1, .9, 'the heads just hiss', [.7,.8,.7], .5, delay / 1000);
+  if (!e.awake) wake(e);
 }
 function kill(e, src, delay = 0){
   e.dead = true;
   dying.push({e, at:now() + delay});
   setTimeout(() => e.isPlayer ? Snd.gameover() : Snd.death(), delay);
-  if (e.isPlayer) { state.dead = true; log('You fall. Press R to try again. (He would tell you to.)', [1,.35,.3]); return; }
+  if (e.isPlayer) { state.dead = true; log('You fall. Press R to try this floor again. (He would tell you to.)', [1,.35,.3]); return; }
   state.mem.kills++;
-  const verb = src === 'shock' ? 'is fried' : src === 'burn' ? 'burns to a crisp' : src === 'melee' && e.frozen ? 'shatters into ice shards' : 'dies';
-  log(`The ${e.name} ${verb}.`, [.9,.9,.7]);
+  const verb = e.type === 'hydra' ? 'collapses, headless at last' : src === 'holy' ? 'crumbles to bright dust' : src === 'shock' ? 'is fried' : src === 'burn' ? 'burns to a crisp'
+    : src === 'melee' && e.frozen ? 'shatters into ice shards' : 'dies';
+  log(`${e.boss ? capF(e.name) : 'The ' + e.name} ${verb}.`, [.9,.9,.7]);
+  const drop = (kind, extra) => { const [x, y] = nearCell(e, player.x, player.y); items.push({x, y, kind, ...extra}); };
+  if (e.carry) { drop(e.carry); log(`Something glints where it fell: ${ITEMS[e.carry].name}!`, [.85,.9,1]); }
+  else if (!e.boss && !e.minion && rnd() < .3) drop('gold');
+  if (e.boss) bossDown(e);
 }
-
-// =====================================================================
-//  Turn logic
-// =====================================================================
-function attack(a, d){
-  const D = a.isPlayer ? {atk:'whip'} : MONS[a.type];
-  const style = ATK[D.atk] ? D.atk : 'stab', A = ATK[style];
-  const dx = Math.sign(d.x - a.x), dy = Math.sign(d.y - a.y);
-  a.act = {style, t0:now(), dx, dy, s:dx || a.face || 1};
-  if (dx) a.face = dx;
-  const delay = A.dur * A.hit;
-  if (style === 'whip') Snd.whip(); else Snd.swing();
-  if (style === 'tongue') Snd.tongue();
-  if (style === 'slam' || style === 'punch') setTimeout(() => { shake(5); Snd.slam();
-    for (let k = 0; k < 6; k++) part(d.x + (rnd() - .5), d.y + .3, (rnd() - .5) * 3, -rnd() * 2, .5, '.', [.7,.6,.5], 5); }, delay);
-  if (a.isPlayer) {
-    const dmg = ri(2, 4) * (d.frozen ? 2 : 1);
-    log(d.frozen ? `You whip the frozen ${d.name}. It cracks!` : pick([`Your tail whips the ${d.name}.`, `You lash the ${d.name}.`, `You spin and strike the ${d.name}.`]));
-    damage(d, dmg, 'melee', delay, a);
-  } else {
-    const dmg = a.dmg + ri(0, 1);
-    log(`The ${a.name} ${{bite:'bites', stab:'stabs', engulf:'engulfs', cleave:'cleaves', tongue:'lashes its tongue at', latch:'latches onto',
-      pounce:'pounces on', clap:'claps its great hands on', swoop:'swoops through', spear:'jabs', slam:'slams', punch:'punches', dive:'dives at',
-      whip:'tail-whips'}[style] || 'hits'} you.`, [1,.6,.5]);
-    damage(d, dmg, 'melee', delay, a);
-    if (D.drain && !a.dead) { a.hp = Math.min(a.maxhp, a.hp + dmg); }
+const BOSS_SPELL = {matriarch:'fire', brood:'lightning', hydra:'frost', dragon:'holy'};
+function bossDown(e){
+  const [cx, cy] = ctr(e);
+  setTimeout(() => { shake(10); flash(e.x, e.y, 9, [1,.9,.6], 3, 1400); Snd.win(); }, 300);
+  state.bossSeen = false;
+  if (BOSS_SPELL[e.type]) { items.push({x:e.x, y:e.y, kind:'tome', spell:BOSS_SPELL[e.type]}); log('Something heavy thumps to the floor: a book, bound in old leather and humming.', [1,.9,.55]); }
+  if (e.type === 'lich') {
+    items.push({x:e.x, y:e.y, kind:'stone'});
+    for (const m of ents) if (m.minion && !m.dead) kill(m, 'shock', 200);
+    log('The king comes apart like a dropped vase. Where his heart was, something glows.', [1,.95,.8]);
+  }
+  if (e.type === 'dragon') items.push({x:e.x + 1, y:e.y, kind:'gold'}, {x:e.x, y:e.y + 1, kind:'gold'}, {x:e.x + 1, y:e.y + 1, kind:'potion'});
+  player.maxhp += 4; healPlayer(8, true);
+  log('You feel tougher for having lived through that. (+4 max HP)', [1,.85,.6]);
+  if (level.exit) {
+    const [x, y] = level.exit; map[idx(x, y)] = 'STAIRS';
+    setTimeout(() => { flash(x, y, 6, [1,1,.6], 2.5, 1600); Snd.zone(); }, 700);
+    log('Stone grinds on stone. A way down opens.', [1,1,.6]);
   }
 }
+function wake(m){
+  if (m.awake) return;
+  m.awake = true; state.bossSeen = true;
+  m.seen = [player.x, player.y];
+  Snd.roar(); shake(5);
+  const D = MONS[m.type];
+  log(`${capF(m.name)}, ${D.title}, ${{matriarch:'heaves herself up and roars', brood:'unfolds from the dark, leg by leg',
+    hydra:'lifts three heads out of the reeds', dragon:'opens one molten eye', lich:'turns, slowly, and smiles'}[m.type] || 'wakes'}.`, [1,.6,.45]);
+}
 
-const blocksFor = (m, i) => { const t = map[i], d = TD[t]; return d.block && t !== 'DOOR' && !(d.lava && MONS[m.type]?.lavawalk); };
+// =====================================================================
+//  Turn logic: to-hit rolls against armour class, critical hits
+// =====================================================================
+function rollHit(a, d){
+  const nat = ri(1, 20);
+  if (nat === 1) return {hit:false, nat};
+  const bonus = a.isPlayer ? playerHit() : a.hit;
+  const ac = d.isPlayer ? playerAC() : d.frozen ? Math.min(d.ac, 6) : d.ac;
+  const critOn = a.isPlayer ? weaponStats().crit : 20;
+  const hit = nat === 20 || nat + bonus >= ac;
+  return {hit, crit:hit && nat >= critOn, nat};
+}
+function attack(a, d, extraDelay = 0){
+  const Wp = a.isPlayer ? weaponStats() : null;
+  const D = a.isPlayer ? {atk:Wp.style} : MONS[a.type];
+  const style = ATK[D.atk] ? D.atk : 'stab', A = ATK[style];
+  const [ax, ay] = nearCell(a, d.x, d.y), [tx, ty] = nearCell(d, ax, ay);
+  const dx = Math.sign(tx - ax), dy = Math.sign(ty - ay);
+  const go = () => {
+    a.act = {style, t0:now(), dx, dy, s:dx || a.face || 1};
+    if (dx) a.face = dx;
+    if (style === 'whip') Snd.whip(); else Snd.swing();
+    if (style === 'tongue') Snd.tongue();
+  };
+  if (extraDelay) setTimeout(go, extraDelay); else go();
+  const delay = A.dur * A.hit + extraDelay;
+  if (a.isPlayer && MONS[d.type]?.immune?.melee) {
+    log(`Your ${state.weapon ? 'blade' : 'tail'} passes right through the ${d.name}, like a hand through fog.`, [.7,.75,.85]);
+    damage(d, 1, 'melee', delay, a); return;
+  }
+  const r = rollHit(a, d);
+  if (!r.hit) {
+    setTimeout(() => { Snd.miss(); const [cx, cy] = ctr(d); part(cx, cy - .3, (rnd() - .5) * .6, -1.2, .7, 'miss', [.6,.65,.6], 1); }, delay);
+    log(a.isPlayer ? pick([`You miss the ${d.name}.`, `The ${d.name} turns your blow on its hide.`, `Your swing goes wide of the ${d.name}.`])
+                   : `The ${a.name} ${a.boss ? 'misses' : pick(['misses you', 'glances off your armour'])}.`, a.isPlayer ? [.6,.65,.6] : [.75,.8,.7]);
+    if (a.isPlayer && d.boss && !d.awake) wake(d);
+    return;
+  }
+  if (style === 'slam' || style === 'punch') setTimeout(() => { shake(5); Snd.slam();
+    for (let k = 0; k < 6; k++) part(d.x + (rnd() - .5), d.y + .3, (rnd() - .5) * 3, -rnd() * 2, .5, '.', [.7,.6,.5], 5); }, delay);
+  if (r.crit) critFX(d, delay);
+  if (a.isPlayer) {
+    let dmg = ri(Wp.lo, Wp.hi) * (d.frozen ? 2 : 1) * (r.crit ? Wp.mult : 1);
+    const what = state.weapon ? `your ${Wp.name}` : 'your tail';
+    log(r.crit ? pick([`CRITICAL! You drive ${what} home into the ${d.name}!`, `CRITICAL! A perfect strike on the ${d.name}!`])
+      : d.frozen ? `You strike the frozen ${d.name}. It cracks!`
+      : state.weapon ? pick([`You hit the ${d.name}.`, `You cut the ${d.name}.`, `${capF(what)} bites into the ${d.name}.`])
+      : pick([`Your tail whips the ${d.name}.`, `You lash the ${d.name}.`, `You spin and strike the ${d.name}.`]), r.crit ? [1,.88,.4] : undefined);
+    damage(d, dmg, 'melee', delay, a, r.crit);
+  } else {
+    let dmg = a.dmg + ri(0, a.boss ? 2 : 1);
+    if (r.crit) dmg *= 2;
+    log(`${r.crit ? 'CRITICAL! ' : ''}${a.boss ? capF(a.name) : 'The ' + a.name} ${{bite:'bites', stab:'stabs', engulf:'engulfs', cleave:'cleaves', tongue:'lashes its tongue at', latch:'latches onto',
+      pounce:'pounces on', clap:'claps its great hands on', swoop:'swoops through', spear:'jabs', slam:'slams', punch:'smashes', dive:'dives at',
+      whip:'tail-whips'}[style] || 'hits'} you.`, r.crit ? [1,.35,.3] : [1,.6,.5]);
+    damage(d, dmg, 'melee', delay, a, r.crit);
+    if (D.drain && !a.dead) { a.hp = Math.min(a.maxhp, a.hp + dmg); }
+    if (D.poison && !d.dead) { if (!d.poison) setTimeout(() => Snd.poison(), delay); d.poison = Math.max(d.poison, D.poison);
+      log('Venom burns in the wound. You are poisoned!', [.6,1,.4]); }
+  }
+}
+// crits get the works: a white slash, a starburst, a jolt, a moment where time holds its breath
+function critFX(e, delay){
+  setTimeout(() => {
+    const [cx, cy] = ctr(e);
+    flash(e.x, e.y, 6, [1,.92,.7], 3.2, 520);
+    shake(e.isPlayer ? 7 : 9); hitStop = now() + 110; screenFlashT = now();
+    slashes.push({x:cx, y:cy, a:-.6 + rnd() * .4 + (rnd() < .5 ? PI : 0), t0:now(), dur:340, len:.9 + e.s * .55, col:e.isPlayer ? [1,.35,.3] : [1,.95,.75]});
+    for (let k = 0; k < 26; k++) { const a = rnd() * PI * 2, s = 3 + rnd() * 6;
+      part(cx, cy, Math.cos(a) * s, Math.sin(a) * s, .35 + rnd() * .4, pick(['*', '+', '·', 'x']), e.isPlayer ? [1, .4 + rnd() * .3, .3] : [1, .85 + rnd() * .15, .4 + rnd() * .4], 3); }
+    part(cx, cy - .9 - (e.s - 1) * .5, 0, -.9, 1.2, e.isPlayer ? 'OUCH!' : 'CRITICAL!', e.isPlayer ? [1,.4,.35] : [1,.9,.35], .3, 0, true);
+    Snd.crit();
+  }, delay);
+}
+
+const blocksFor = (m, i) => { const t = map[i], d = TD[t];
+  if (d.lava && MONS[m.type]?.lavawalk) return false;
+  if (MONS[m.type]?.dry && d.water) return true;
+  return d.block && t !== 'DOOR'; };
+// can m stand with its top-left corner at (nx, ny)?
+function fits(m, nx, ny){
+  for (let j = 0; j < m.s; j++) for (let i = 0; i < m.s; i++) {
+    const x = nx + i, y = ny + j; if (!inb(x, y)) return false;
+    if (blocksFor(m, idx(x, y)) || (m.s > 1 && map[idx(x, y)] === 'DOOR')) return false;
+    const o = entAt(x, y); if (o && o !== m) return false;
+  }
+  return true;
+}
 function tryStep(m, nx, ny, style){
   if (!inb(nx, ny)) return false;
   const i = idx(nx, ny);
-  if (map[i] === 'DOOR') { map[i] = 'OPEN'; if (vis[i]) Snd.door(); return true; }
-  if (blocksFor(m, i) || entAt(nx, ny)) return false;
-  if (m.npc && zone[i] !== Z.HOUSE) return false;
+  if (m.s === 1 && map[i] === 'DOOR') { map[i] = 'OPEN'; if (vis[i]) Snd.door(); return true; }
+  if (!fits(m, nx, ny)) return false;
+  if (m.npc && cheb({x:nx, y:ny}, {x:m.home[0], y:m.home[1]}) > 2) return false;
   moveEnt(m, nx, ny, style); return true;
 }
 function stepToward(m, tx, ty){
-  const cur = Math.max(Math.abs(tx - m.x), Math.abs(ty - m.y));
+  const T = {x:tx, y:ty}, cur = cheb(m, T);
   let best = null, bs = 1e9;
   for (const [dx, dy] of DIR8) {
     const nx = m.x + dx, ny = m.y + dy;
-    if (!inb(nx, ny)) continue;
+    if (!fits(m, nx, ny)) continue;
     const i = idx(nx, ny);
-    if (blocksFor(m, i) || entAt(nx, ny)) continue;
-    const s = Math.max(Math.abs(tx - nx), Math.abs(ty - ny)) + (fire[i] && !MONS[m.type]?.immune?.burn ? 4 : 0) + rnd()*.2;
+    const s = cheb({x:nx, y:ny, s:m.s}, T) + (fire[i] && !MONS[m.type]?.immune?.burn ? 4 : 0) + rnd()*.2;
     if (s < bs) { bs = s; best = [nx, ny]; }
   }
   if (best && bs <= cur + .2) return tryStep(m, best[0], best[1]);
@@ -423,7 +683,15 @@ function stepToward(m, tx, ty){
 function monsterAct(m){
   if (m.npc) { if (rnd() < .04 && cheb(m, player) > 1) { const [dx, dy] = pick(DIR8); tryStep(m, m.x + dx, m.y + dy); } return; }
   const D = MONS[m.type];
-  if (m.frozen > 0) { m.frozen--; if (!m.frozen && vis[idx(m.x, m.y)]) log(`The ${m.name} thaws out.`); return; }
+  if (D.boss && !m.awake) {
+    const B = level.bossRoom, inRoom = B && player.x >= B.x && player.y >= B.y && player.x < B.x + B.w && player.y < B.y + B.h;
+    if (inRoom || (canSee(m) && cheb(m, player) <= 7)) wake(m); else return;
+  }
+  if (m.frozen > 0) { m.frozen--; if (!m.frozen && vis[idx(m.x, m.y)]) log(`${m.boss ? capF(m.name) : 'The ' + m.name} thaws out.`); return; }
+  if (D.hydra) { hydraAct(m); return; }
+  if (m.type === 'dragon') { dragonAct(m); return; }
+  if (m.type === 'lich') { lichAct(m); return; }
+  if (m.type === 'brood' && broodAct(m)) return;
   if (D.slow && state.turn % 2) return;
   if (D.regen && m.hp < m.maxhp && !m.burning && state.turn - (m.burnT || -99) > 3) {
     m.hp++; if (canSee(m) && rnd() < .3) part(m.x, m.y - .3, 0, -.8, .7, '+', [.5,1,.5], .5);
@@ -432,7 +700,7 @@ function monsterAct(m){
 }
 function actOnce(m, D){
   const P = player, d = cheb(m, P);
-  if (d <= 9 && los(m.x, m.y, P.x, P.y)) {
+  if (d <= 9 && losE(m, P.x, P.y)) {
     if (!m.seen && canSee(m)) { Snd.alert(); if (D.howl) Snd.howl(); if (m.type === 'frog') Snd.croak(); }
     m.seen = [P.x, P.y];
   }
@@ -445,8 +713,168 @@ function actOnce(m, D){
         moveEnt(m, bx, by, 'leap'); if (vis[idx(bx, by)]) Snd.croak(); return; }
     }
     stepToward(m, m.seen[0], m.seen[1]);
-    if (m.x === m.seen[0] && m.y === m.seen[1]) m.seen = null;
-  } else if (rnd() < .3) { const [dx, dy] = pick(DIR8); tryStep(m, m.x + dx, m.y + dy); }
+    if (covers(m, m.seen[0], m.seen[1])) m.seen = null;
+  } else if (rnd() < .3 && !m.boss) { const [dx, dy] = pick(DIR8); tryStep(m, m.x + dx, m.y + dy); }
+}
+
+// ---------------- the bosses ----------------
+function hydraAct(m){
+  if (m.stumps > 0) {
+    const grow = Math.min(9 - m.heads, m.stumps * 2);
+    m.heads += grow; m.stumps = 0;
+    if (grow > 0) { log(grow > 2 ? `${grow} new heads burst, hissing, from the stumps!` : 'Two new heads burst, hissing, from the stump!', [.6,1,.5]); Snd.roar(); shake(3); }
+  }
+  const P = player, d = cheb(m, P);
+  if (d === 1) {
+    const bites = Math.min(m.heads, 4);
+    for (let k = 0; k < bites && !P.dead; k++) attack(m, P, k * 140);
+    return;
+  }
+  if (state.turn % 2 === 0) { m.seen = [P.x, P.y]; stepToward(m, P.x, P.y); }
+}
+// the dragon fights a few turns, then breathes: everything it can see burns. Hide behind something.
+function dragonAct(m){
+  const P = player;
+  if (m.phase === 'charge') {
+    m.pt--;
+    if (m.pt <= 0) { dragonBreath(m); m.phase = 'spent'; m.pt = 3; m.spent = true; return; }
+    Snd.charge(); shake(2);
+    log(m.pt === 1 ? 'Cinder\'s throat glows white-hot. HIDE!' : 'Cinder draws in a long, roaring breath. Its chest is glowing...', [1,.6,.3]);
+    return;
+  }
+  if (m.phase === 'spent') {
+    m.pt--;
+    if (m.pt <= 0) { m.phase = null; m.spent = false; m.pt = ri(3, 5); log('Cinder shakes the smoke out of its head.', [1,.7,.5]); }
+    else if (rnd() < .5) part(m.x + 1, m.y - .3, (rnd() - .5) * .4, -.8, 1.4, '°', [.6,.6,.6], -.1);
+    return;
+  }
+  m.pt--;
+  if (m.pt <= 0) { m.phase = 'charge'; m.pt = 3; Snd.roar(); log('Cinder rears back and sucks in air. Its chest begins to glow. Get behind something!', [1,.55,.25]); return; }
+  m.seen = [P.x, P.y];
+  if (cheb(m, P) === 1) attack(m, P); else stepToward(m, P.x, P.y);
+}
+function dragonMouth(m){ return nearCell(m, player.x, player.y); }
+function breathCells(m){
+  const [mx, my] = dragonMouth(m), out = [];
+  for (let y = my - 12; y <= my + 12; y++) for (let x = mx - 12; x <= mx + 12; x++) {
+    if (!inb(x, y) || covers(m, x, y) || Math.hypot(x - mx, y - my) > 12.5) continue;
+    if (TD[map[idx(x, y)]].opaque) continue;
+    if (los(mx, my, x, y)) out.push([x, y]);
+  }
+  return out;
+}
+function dragonBreath(m){
+  const cells = breathCells(m), [mx, my] = dragonMouth(m), P = player;
+  Snd.boom(); Snd.whoosh(); shake(12);
+  flash(mx, my, 12, [1,.5,.15], 3.5, 1100);
+  log('Cinder BREATHES. The hall fills with fire!', [1,.5,.2]);
+  let hitP = false;
+  for (const [x, y] of cells) {
+    const i = idx(x, y), d = Math.hypot(x - mx, y - my);
+    if (rnd() < .5) part(x + (rnd() - .5) * .6, y + (rnd() - .5) * .6, (x - mx) / (d || 1) * 2, (y - my) / (d || 1) * 2 - 1, .5 + rnd() * .4, pick(['*', '^', '\'']), [1, .3 + rnd() * .5, .08], -1, d * .025);
+    if (TD[map[i]].burn) ignite(i);
+    if (map[i] === 'ICE') { map[i] = under[i] || 'WATER'; steam(x, y); }
+    if (map[i] === 'OBSIDIAN' && rnd() < .3) { map[i] = 'LAVA'; }
+    const e = entAt(x, y);
+    if (e && e !== m && !e.npc) {
+      if (e.isPlayer) hitP = true;
+      damage(e, e.isPlayer ? 14 : 10, 'burn', d * 25);
+      if (!MONS[e.type]?.immune?.burn || e.isPlayer) e.burning = Math.max(e.burning, 3);
+    }
+  }
+  if (!hitP && !P.dead) log('The fire roars past your hiding place. You are untouched!', [.8,1,.8]);
+  else if (!P.dead) log('The flames find you. You are burning!', [1,.4,.3]);
+  log('Cinder sags, smoking and panting. NOW is your chance!', [1,.9,.5]);
+}
+// the lich: every spell is shown before it lands
+function lichAct(m){
+  const P = player, B = level.bossRoom;
+  if (m.cast) {
+    m.cast.t--;
+    if (m.cast.t <= 0) { lichResolve(m); m.cast = null; m.cd = ri(1, 2); }
+    else { Snd.charge(); log(m.cast.kind === 'ray' ? 'The black light in his hand is blinding now. Break his line of sight!' : 'The sigils under your feet burn brighter. MOVE!', [.85,.65,1]); }
+    return;
+  }
+  const d = cheb(m, P), sees = los(m.x, m.y, P.x, P.y);
+  if (d === 1 && rnd() < .55) { lichBlink(m); return; }
+  if (m.cd > 0) {
+    m.cd--; m.seen = [P.x, P.y];
+    if (d === 1) attack(m, P); else if (d > 5) stepToward(m, P.x, P.y);
+    return;
+  }
+  const minions = ents.filter(e => e.minion && !e.dead).length;
+  const r = rnd();
+  if (minions < 3 && r < .25) { lichRaise(m); m.cd = 2; return; }
+  if (sees && r < .65) {
+    m.cast = {kind:'ray', t:2}; Snd.charge();
+    log('King Aurex lifts one finger. Black light gathers on it. (Break his line of sight!)', [.85,.65,1]);
+  } else {
+    const cells = []; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) cells.push([P.x + dx, P.y + dy]);
+    m.cast = {kind:'nova', t:2, cells}; Snd.freeze();
+    log('King Aurex points at the floor beneath you. Frost sigils spread out around your feet!', [.7,.8,1]);
+  }
+}
+function lichResolve(m){
+  const P = player, c = m.cast;
+  if (c.kind === 'ray') {
+    const clear = los(m.x, m.y, P.x, P.y) && cheb(m, P) <= 16;
+    const end = clear ? [P.x, P.y] : (() => { let last = [m.x, m.y]; for (const [x, y] of bline(m.x, m.y, P.x, P.y)) { last = [x, y]; if (TD[map[idx(x, y)]].opaque) break; } return last; })();
+    bolts.push({pts:[[m.x, m.y], ...bline(m.x, m.y, end[0], end[1])], t0:now(), dur:520, col:[.7,.4,1]});
+    flash(end[0], end[1], 5, [.7,.4,1], 2.5, 700); sparks(end[0], end[1], 12); shake(8); Snd.zap();
+    if (clear) { damage(P, 13, 'magic'); log('The black ray hits you full in the chest!', [1,.4,.5]); }
+    else log('The black ray splashes harmlessly against stone.', [.8,1,.8]);
+  } else {
+    Snd.shatter(); shake(5);
+    let hit = false;
+    for (const [x, y] of c.cells) {
+      if (!inb(x, y)) continue;
+      frostT[idx(x, y)] = now(); frostBits(x, y); frostBits(x, y);
+      const e = entAt(x, y); if (e && e !== m && !e.npc) { if (e.isPlayer) hit = true; damage(e, e.isPlayer ? 11 : 6, 'frost'); }
+    }
+    flash(c.cells[4][0], c.cells[4][1], 4, [.6,.85,1], 2.2, 600);
+    log(hit ? 'The frost sigils erupt around you. Cold bites to the bone!' : 'The frost sigils erupt — on an empty floor.', hit ? [1,.5,.5] : [.8,1,.8]);
+  }
+}
+function lichBlink(m){
+  const B = level.bossRoom, P = player;
+  for (let tries = 0; tries < 60; tries++) {
+    const x = ri(B.x + 1, B.x + B.w - 2), y = ri(B.y + 1, B.y + B.h - 2);
+    if (cheb({x, y}, P) < 5 || !fits(m, x, y)) continue;
+    for (let k = 0; k < 14; k++) part(m.x, m.y, (rnd() - .5) * 3, (rnd() - .5) * 3, .6, '·', [.7,.5,1], 0);
+    flash(m.x, m.y, 4, [.6,.4,1], 1.8, 400);
+    m.x = m.vx = x; m.y = m.vy = y; m.anim = null;
+    flash(x, y, 4, [.6,.4,1], 1.8, 400); Snd.frost();
+    log('King Aurex folds into shadow and steps out somewhere else.', [.8,.65,1]);
+    return;
+  }
+}
+function lichRaise(m){
+  let n = 0;
+  for (const [dx, dy] of DIR8) {
+    if (n >= 2) break;
+    const x = m.x + dx * 2, y = m.y + dy * 2;
+    if (!inb(x, y) || TD[map[idx(x, y)]].block || entAt(x, y)) continue;
+    const s = mkEnt('skeleton', x, y, {minion:true, name:'risen skeleton', hp:6, maxhp:6});
+    ents.push(s); n++;
+    for (let k = 0; k < 10; k++) part(x, y + .3, (rnd() - .5) * 2, -rnd() * 2, .6, pick([';', ',', '.']), [.9,.88,.8], 3);
+  }
+  if (n) { Snd.slam(); log('King Aurex spreads his hands. The floor coughs up bones, and the bones stand up.', [.85,.75,1]); }
+}
+// the broodmother spits webs from a distance, then comes in to bite
+function broodAct(m){
+  const P = player, d = cheb(m, P);
+  m.cd = (m.cd || 0) - 1;
+  if (d >= 2 && d <= 6 && m.cd <= 0 && losE(m, P.x, P.y) && rnd() < .5) {
+    m.cd = 4;
+    const [sx, sy] = nearCell(m, P.x, P.y), cells = bline(sx, sy, P.x, P.y);
+    projs.push({cells, msPer:28, ch:'%', col:[.9,.9,.95], trail:(x, y) => { if (rnd() < .4) part(x, y, 0, 0, .3, '·', [.8,.8,.85]); },
+      onDone:() => {}, t0:now(), sx, sy, x:sx, y:sy});
+    const i = idx(P.x, P.y);
+    if (!TD[map[i]].water && !TD[map[i]].block) map[i] = 'WEB';
+    P.webbed = 2; log('The Broodmother spits a gob of web. You are stuck fast!', [.85,.85,.9]);
+    return true;
+  }
+  return false;
 }
 
 function ignite(i){ const d = TD[map[i]]; if (d.burn && !fire[i]) { fire[i] = d.fuel + ri(0, 1); snowAcc[i] = 0; } }
@@ -456,6 +884,13 @@ function burnItemsAt(x, y){
 function burnOut(i){
   const x = i % MW, y = (i / MW) | 0;
   if (map[i] === 'CHEST') { items.push({x, y, kind:'gold'}); if (vis[i]) log('The chest burns away, spilling gold.', [1,.8,.3]); }
+  if (map[i] === 'EGGSAC') {
+    state.eggs = (state.eggs || 0) + 1; Snd.death();
+    for (let k = 0; k < 10; k++) part(x, y, (rnd() - .5) * 3, -rnd() * 2, .6, pick(['.', ',', '°']), [.9,.85,.6], 4);
+    log(state.eggs >= 3 ? 'The last egg sac pops and shrivels. That\'s all three. Eli will want to know.' : `An egg sac bursts in the flames. (${state.eggs} of 3)`, [1,.8,.5]);
+  }
+  if (map[i] === 'BRAMBLE' && vis[i]) log('The brambles crumble to ash. There was something behind them!', [1,.8,.5]);
+  if (map[i] === 'BARRICADE' && vis[i]) log('The coffin barricade collapses into embers. The way is open.', [1,.8,.5]);
   map[i] = zone[i] === Z.MIRE ? 'MUD' : 'ASH';
 }
 function tickFire(){
@@ -507,13 +942,13 @@ function checkZone(){
   }
   if (!m.called && !npc.dead && cheb(player, npc) <= 8 && canSee(npc) && !m.met) {
     m.called = true;
-    log('A voice from the house: "Door\'s open! Wipe your feet. Or don\'t, I\'m not your mother."', [.85,.8,1]);
+    log('A voice by the fire: "Come and sit, you look half frozen. Mind the step."', [.85,.8,1]);
   }
 }
 
 function endTurn(){
   state.turn++;
-  for (const m of ents) if (!m.isPlayer && !m.dead) monsterAct(m);
+  for (const m of ents.slice()) if (!m.isPlayer && !m.dead) monsterAct(m);
   for (const e of ents) {
     if (e.dead || e.npc) continue;
     const i = idx(e.x, e.y), d = TD[map[i]], fireproof = MONS[e.type]?.immune?.burn && !e.isPlayer;
@@ -525,6 +960,14 @@ function endTurn(){
       else if (localW(zone[i]).rain > .5 && rnd() < .5) { e.burning = 0; steam(e.x, e.y); if (e.isPlayer) log('The rain puts you out.', [.7,.85,1]); }
       else { if (e.isPlayer) log('You are burning!', [1,.55,.2]); damage(e, 1, 'burn'); e.burning--; ignite(i); }
     }
+    if (e.smite > 0 && !e.dead) {
+      e.smite--; damage(e, 2, 'holy');
+      if (!e.dead) for (let k = 0; k < 3; k++) part(e.x + (rnd() - .5) * .6, e.y, (rnd() - .5) * .3, -.8, .8, pick(['+', '·']), [1,.9,.55], -.2);
+    }
+    if (e.poison > 0 && !e.dead) {
+      e.poison--; damage(e, 1, 'poison');
+      if (e.isPlayer) { Snd.poison(); part(e.x, e.y - .2, 0, -.6, .8, '•', [.5,1,.3], -.2); if (!e.poison) log('The venom wears off.', [.7,.9,.7]); }
+    }
   }
   tickFire();
   { let n = 0; for (let i = 0; i < fire.length; i++) if (fire[i] > 0 && vis[i]) n++; Snd.crackle(n); }
@@ -533,8 +976,68 @@ function endTurn(){
   if (!player.dead) player.mp = Math.min(player.maxmp, player.mp + 1);
   ents = ents.filter(e => !e.dead || e.isPlayer);
   rebuildLights(); computeFOV();
+  computeDanger();
   checkZone();
   if (!state.dead && !state.won) maybeEcho();
+  saveGame();
+}
+// tiles about to be hit by a telegraphed attack
+function computeDanger(){
+  danger.fill(0);
+  for (const m of ents) {
+    if (m.dead) continue;
+    if (m.phase === 'charge') for (const [x, y] of breathCells(m)) danger[idx(x, y)] = 1;
+    if (m.cast?.kind === 'ray') { for (const [x, y] of bline(m.x, m.y, player.x, player.y)) { if (!inb(x, y) || TD[map[idx(x, y)]].opaque) break; danger[idx(x, y)] = 2; } }
+    if (m.cast?.kind === 'nova') for (const [x, y] of m.cast.cells) if (inb(x, y)) danger[idx(x, y)] = 3;
+  }
+}
+
+function pickUp(it){
+  const P = player, I = ITEMS[it.kind];
+  if (it.kind === 'gold')   { const g = ri(5, 15) + 3 * state.floor; state.gold += g; Snd.coin(); log(`You pick up ${g} gold.`, [1,.85,.3]); }
+  else if (I.pack) { state.inv[it.kind] = (state.inv[it.kind] || 0) + 1; Snd.coin();
+    log(`You pack away a ${I.name}. (${it.kind === 'potion' ? '5' : '6'} to drink, I for your pack)`, it.kind === 'potion' ? [1,.5,.6] : [.6,.7,1]); }
+  else if (it.kind === 'scroll') { P.maxmp += 4; P.mp = P.maxmp; Snd.scroll(); log('You read a scroll of insight: max MP +4.', [.95,.9,.7]); }
+  else if (I.key) { state.keys[it.kind] = (state.keys[it.kind] || 0) + 1; Snd.scroll();
+    const q = questFor(state.floor), have = state.keys[it.kind];
+    log(it.kind === 'lily' ? `You pick a moonlily. It glows faintly in your hand. (${have} of 3)` : `You found ${I.name}!`, [.85,.9,1]);
+    if (q && q.item === it.kind && have >= q.need && state.quest.stage === 1) log('That should do it. Back to the fire, then.', [.8,.75,1]); }
+  else if (it.kind === 'tome') learnSpell(it.spell);
+  else if (it.kind === 'stone') takeStone();
+}
+function learnSpell(id){
+  const P = player, k = spellKey(id), sp = SPELLS[k];
+  state.spells[id] = true; P.mp = P.maxmp;
+  flash(P.x, P.y, 8, sp.col, 2.6, 1500); Snd.scroll(); Snd.zone();
+  for (let n = 0; n < 30; n++) part(P.x + (rnd() - .5) * 2, P.y + (rnd() - .5) * 1.5, (rnd() - .5) * .5, -1 - rnd() * 1.5, 1.4, pick(['·', '*', '+']), sp.col, -.3, n * .02);
+  log(`You learn ${sp.name}! Press ${k} (or click it below), then aim.`, sp.col);
+  inspect = {x:P.x, y:P.y, key:'tome:' + id, title:`${sp.name}`, sub:'a spell, learned · press ' + k, text:gonzoPick('tome:' + id, GONZO.tomes[id]),
+    fact:GONZO.tomeFacts[id], col:sp.col, t0:now(), turn:state.turn + 1};
+  Snd.page();
+}
+function takeStone(){
+  const P = player;
+  state.hasStone = true;
+  flash(P.x, P.y, 12, [1,.95,.8], 3, 2600); Snd.win(); shake(6);
+  for (let n = 0; n < 50; n++) part(P.x, P.y, (rnd() - .5) * 6, (rnd() - .5) * 6, 1.6, pick(['·', '*', '◆', '+']), [1, .9 + rnd() * .1, .7 + rnd() * .3], 0, n * .01);
+  log('You pick up the immortality stone. It is warm, and it is beating, very slowly, like a heart that has all the time in the world.', [1,.95,.8]);
+  // he took the stairs. all of them.
+  const spots = [];
+  for (let r = 2; r <= 4 && !spots.length; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+    const x = P.x + dx, y = P.y + dy; if (inb(x, y) && !TD[map[idx(x, y)]].block && !entAt(x, y) && cheb({x, y}, P) === r) spots.push([x, y]);
+  }
+  if (spots.length) {
+    const [x, y] = pick(spots);
+    npc.x = npc.vx = x; npc.y = npc.vy = y; npc.home = [x, y]; npc.anim = null;
+    setTimeout(() => log(`Footsteps behind you, slow and familiar. "Took the stairs," says ${state.mem.knowsName ? 'Eli' : 'the old man'}. "All of them. My knees will never forgive you."`, [.85,.8,1]), 900);
+  }
+}
+function finishFloor(){
+  const n = state.floor;
+  Snd.zone();
+  if (state.quest.stage === 1) log('You leave the favour undone. Somewhere behind you, a kettle sighs.', [.7,.65,.8]);
+  log(`You go down. ${n === 4 ? 'The air turns cold and dry and very old.' : 'Down, and down, and down.'}`, [1,1,.6]);
+  enterLevel(n + 1);
 }
 
 function playerMove([dx, dy]){
@@ -543,16 +1046,23 @@ function playerMove([dx, dy]){
   if (dx) P.face = dx;
   const e = entAt(nx, ny);
   if (e && e.npc) { P.lunge = null; talkToOldMan(); return; }
+  if (P.webbed > 0) {
+    P.webbed--; P.act = {style:'latch', t0:now(), dx:dx * .3, dy:dy * .3, s:dx || 1};
+    log(P.webbed ? 'You tear at the sticky web...' : 'You rip free of the web!', [.85,.85,.9]);
+    if (!P.webbed) { const j = idx(P.x, P.y); if (map[j] === 'WEB') map[j] = zone[j] === Z.MIRE ? 'MUD' : ZONES[zone[j]].floor; }
+    endTurn(); return;
+  }
   if (e) { attack(P, e); endTurn(); return; }
   const i = idx(nx, ny), key = map[i], d = TD[key];
   const nudge = () => { P.act = {style:'bite', t0:now(), dx:dx * .5, dy:dy * .5, s:dx || 1}; };
+  if (key === 'GRAVE') { nudge(); visitGrave(i); endTurn(); return; }
   if (key === 'SECRET') { openSecret(nx, ny, i); nudge(); endTurn(); return; }
   if (key === 'ALTAR' || key === 'ALTARSPENT') { nudge(); pray(i, nx, ny); endTurn(); return; }
   if (key === 'DOOR') { map[i] = 'OPEN'; nudge(); Snd.door(); log('You open the door.'); endTurn(); return; }
   if (key === 'CHEST') { map[i] = 'CHESTOPEN'; const g = ri(15, 30); state.gold += g; nudge(); Snd.coin(); log(`You open the chest: ${g} gold!`, [1,.85,.3]); endTurn(); return; }
   if (d.block) {
     nudge(); Snd.bump();
-    const hint = HINT[key];
+    const hint = hintFor(key);
     if (hint) log(hint, [.6,.75,.65]);
     return;
   }
@@ -560,18 +1070,12 @@ function playerMove([dx, dy]){
   moveEnt(P, nx, ny); Snd.step(key === 'BOG' ? 'WATER' : key === 'SNOW' || snowAcc[i] > .4 ? 'ICE' : key);
   if (d.water && !wasWater) log(d.bog ? 'You squelch into the bog. Lightning would love this.' : 'You wade into the water. Careful with lightning!', [.5,.75,1]);
   if (key === 'ICE' && map[idx(P.x - dx, P.y - dy)] !== 'ICE') log('The ice creaks under your feet.', [.7,.9,1]);
-  items = items.filter(it => {
-    if (it.x !== nx || it.y !== ny) return true;
-    if (it.kind === 'gold')   { const g = ri(5, 15); state.gold += g; Snd.coin(); log(`You pick up ${g} gold.`, [1,.85,.3]); }
-    if (it.kind === 'potion') { healPlayer(10, true); Snd.potion(); log('You drink a potion. You feel better.', [1,.5,.6]); }
-    if (it.kind === 'scroll') { P.maxmp += 4; P.mp = P.maxmp; Snd.scroll(); log('You read a scroll of insight: max MP +4.', [.95,.9,.7]); }
-    return false;
-  });
-  if (key === 'STAIRS') {
-    state.won = true; Snd.win();
-    log(state.belief ? 'You step through into the dark beyond, carrying a light of your own. Demo complete! (R)' :
-        `You step through into the dark beyond with ${state.gold} gold. Demo complete! (R)`, [1,1,.6]);
-  }
+  if (key === 'WEB' && !P.webbed) { P.webbed = 2; log('You blunder into a web. It clings like a bad decision.', [.85,.85,.9]); }
+  const here = items.filter(it => it.x === nx && it.y === ny);
+  items = items.filter(it => !(it.x === nx && it.y === ny));
+  here.forEach(pickUp);
+  if (key === 'STAIRS') { finishFloor(); return; }
+  if (key === 'UPSTAIRS' && (P.x - dx !== nx || P.y - dy !== ny)) log('The way back up. Not today.', [.6,.7,.6]);
   endTurn();
 }
 
@@ -583,7 +1087,7 @@ function tracePath(sp, tx, ty){
   for (const [x, y] of bline(P.x, P.y, tx, ty)) {
     if (cells.length >= sp.range || !inb(x, y)) break;
     const d = TD[map[idx(x, y)]];
-    if (d.opaque || (d.block && !d.water && !d.lava)) { hit = [x, y]; break; }
+    if (d.opaque || (d.block && !d.water && !d.lava && !d.chasm)) { hit = [x, y]; break; }
     cells.push([x, y]);
     if (sp.stopAtEnt && entAt(x, y)) break;
   }
@@ -591,18 +1095,21 @@ function tracePath(sp, tx, ty){
 }
 function beginCast(k){
   const sp = SPELLS[k];
+  if (!knows(k)) { Snd.error(); log(state.floor === 1 && !Object.keys(state.spells).length ? "You don't know any spells yet. Somewhere down here, someone does." : "You haven't learned that spell yet.", [.7,.6,.6]); return; }
   if (player.mp < cost(k)) { Snd.error(); log(`Not enough mana for ${sp.name}.`, [.8,.5,.5]); return; }
-  state.targeting = k; Snd.select(k);
+  state.targeting = k; Snd.select(SPELLS[k].id);
   log(`${sp.name}: direction key or click a target. Esc cancels.`, sp.col);
 }
 function castAt(tx, ty){
   const k = state.targeting; state.targeting = null;
+  if (!knows(k)) return;
   if (tx === player.x && ty === player.y) return;
   const sp = SPELLS[k], tr = tracePath(sp, tx, ty);
   player.mp -= cost(k);
   const dx = Math.sign(tx - player.x); if (dx) player.face = dx;
   player.act = {style:'spear', t0:now(), dx:Math.sign(tx - player.x) * .4, dy:Math.sign(ty - player.y) * .4, s:dx || 1};
-  if (k === '1') castLightning(tr); else if (k === '2') castFire(tr); else castFrost(tr);
+  const id = SPELLS[k].id;
+  if (id === 'lightning') castLightning(tr); else if (id === 'fire') castFire(tr); else if (id === 'holy') castHoly(tr); else castFrost(tr);
 }
 function floodWater(seeds){
   const body = new Set(seeds), st = [...seeds], ox = seeds[0] % MW, oy = (seeds[0] / MW) | 0;
@@ -619,10 +1126,13 @@ function electrify(seeds, tn){
   let n = 0;
   for (const i of body) { elecT[i] = tn + rnd()*120; if (n++ % 6 === 0) flash(i % MW, (i / MW) | 0, 2.5, [.7,.85,1], 2, 600); }
   log('The water surges with electricity!', [.6,.85,1]); Snd.electrify();
-  for (const e of ents) if (!e.dead && body.has(idx(e.x, e.y))) {
+  for (const e of ents) if (!e.dead && cellsOf(e).some(([x, y]) => body.has(idx(x, y)))) {
     damage(e, 14, 'shock'); sparks(e.x, e.y, 8);
     if (e.isPlayer) log('You are standing in it. Ouch.', [1,.4,.4]);
   }
+  // a rune that touches the water drinks the whole charge
+  for (const i of body) { const x = i % MW, y = (i / MW) | 0;
+    for (const [dx, dy] of DIR8) { const j = idx(x + dx, y + dy); if (inb(x + dx, y + dy) && map[j] === 'RUNE') powerRune(j); } }
 }
 function castLightning(tr){
   const P = player, tn = now();
@@ -630,38 +1140,80 @@ function castLightning(tr){
   bolts.push({pts, t0:tn, dur:420});
   shake(9); Snd.zap();
   log('Lightning cracks from your fingers!', [.7,.85,1]);
-  const seeds = [];
+  const seeds = [], hit = new Set();
   tr.cells.forEach(([x, y], n) => {
-    const e = entAt(x, y); if (e) damage(e, 4, 'shock');
+    const e = entAt(x, y); if (e && !hit.has(e)) { hit.add(e); damage(e, 4, 'shock'); }
     const i = idx(x, y); if (TD[map[i]].water) seeds.push(i);
     if (n % 2 === 0) flash(x, y, 3, [.6,.75,1], 2.2, 380);
     sparks(x, y, 2);
   });
   if (tr.hit) {
     const [hx, hy] = tr.hit, i = idx(hx, hy);
-    if (map[i] === 'ICEWALL') { map[i] = 'FLOOR'; frostBits(hx, hy); sparks(hx, hy, 10); Snd.shatter(); log('The frozen wall shatters!', [.7,.9,1]); }
+    if (map[i] === 'ICEWALL') { map[i] = ZONES[zone[i]].floor; frostBits(hx, hy); sparks(hx, hy, 10); Snd.shatter(); log('The frozen wall shatters!', [.7,.9,1]); }
+    else if (map[i] === 'TORCHOUT') lightTorch(i);
+    else if (map[i] === 'RUNE') log('The rune drinks the spark and flickers, hungry. One bolt isn\'t enough. It wants a whole pool of lightning.', [.7,.75,1]);
     else if (TD[map[i]].burn) ignite(i);
     sparks(hx, hy, 8);
   }
   if (seeds.length) electrify(seeds, tn);
   endTurn();
 }
+// ---- puzzles: cold torches that open a gate, a rune that wants a pool full of lightning, a grave
+function lightTorch(i){
+  map[i] = 'TORCH'; log('The torch flares back to life.', [1,.7,.3]);
+  const T = level.torches;
+  if (!T.length || !T.some(([x, y]) => idx(x, y) === i)) return;
+  const lit = T.filter(([x, y]) => map[idx(x, y)] === 'TORCH').length;
+  if (lit < T.length) { log(`${lit} of ${T.length} torches burn now.`, [1,.8,.5]); Snd.select('fire'); return; }
+  openGates('Four torches burn. Somewhere, heavy chains rattle: the iron gate grinds open!');
+}
+function openGates(msg){
+  for (const [x, y] of level.gates) { const i = idx(x, y); if (map[i] !== 'GATE') continue;
+    map[i] = ZONES[zone[i]].floor === 'SNOW' ? 'FLOOR' : ZONES[zone[i]].floor;
+    flash(x, y, 6, [1,.9,.6], 2.4, 1200);
+    for (let k = 0; k < 14; k++) part(x + (rnd() - .5) * .8, y + (rnd() - .5) * .6, (rnd() - .5) * 3, -rnd() * 2, .6 + rnd() * .6, pick(['.', ',', ':']), [.7,.7,.75], 3); }
+  setTimeout(() => { Snd.slam(); Snd.door(); shake(6); }, 250);
+  log(msg, [1,.9,.6]);
+}
+function powerRune(i){
+  if (map[i] !== 'RUNE') return;
+  map[i] = 'RUNELIT';
+  const x = i % MW, y = (i / MW) | 0;
+  setTimeout(() => { flash(x, y, 8, [.6,.85,1], 3, 1500); sparks(x, y, 16); Snd.zap(); }, 200);
+  openGates('The rune drinks the lightning and BLAZES. Somewhere nearby, a gate shudders open!');
+}
+function visitGrave(i){
+  const q = state.quest;
+  if (map[i] === 'GRAVEDONE') { log('Marta\'s grave. The pressed flower is still there. It always will be, now.', [1,.75,.85]); return; }
+  if (state.floor === 5 && q.stage === 1 && state.keys.flower) {
+    map[i] = 'GRAVEDONE'; delete state.keys.flower;
+    const x = i % MW, y = (i / MW) | 0;
+    flash(x, y, 5, [1,.75,.85], 1.8, 2000); Snd.scroll();
+    for (let k = 0; k < 16; k++) part(x + (rnd() - .5) * .6, y, (rnd() - .5) * .8, -.6 - rnd(), 1.6, pick(['·', '*', '°']), [1,.75,.85], -.2, k * .05);
+    log('You lay the pressed flower on the little stone. MARTA, it says. And underneath, smaller: "Courage is love with its boots on."', [1,.8,.88]);
+    log('That\'s done. He\'ll want to know.', [.8,.75,1]);
+    return;
+  }
+  log('A small, plain grave. The name on it is MARTA. Someone has kept the moss off it, once a year, for a long time.', [.8,.8,.9]);
+}
 function launch(cells, msPer, ch, col, trail, onDone){
   if (!cells.length) { onDone(); return; }
   projs.push({cells, msPer, ch, col, trail, onDone, t0:now(), sx:player.x, sy:player.y, x:player.x, y:player.y});
 }
-function fireTile(x, y, center){
+function fireTile(x, y, center, hit = new Set()){
   if (!inb(x, y)) return;
   const i = idx(x, y), t = map[i];
   snowAcc[i] = 0;
   if (t === 'ICE') { map[i] = under[i] || 'WATER'; steam(x, y); }
   else if (t === 'ICEWALL') { map[i] = 'WATER'; steam(x, y); log('The ice wall melts into a puddle.', [.7,.85,1]); }
-  else if (t === 'TORCHOUT') { map[i] = 'TORCH'; log('The torch flares back to life.', [1,.7,.3]); }
+  else if (t === 'TORCHOUT') lightTorch(i);
   else if (TD[t].water) steam(x, y);
-  else if (TD[t].burn && zone[i] !== Z.HOUSE) ignite(i);
+  else if (TD[t].burn) ignite(i);
   burnItemsAt(x, y);
   const e = entAt(x, y);
-  if (e && !e.isPlayer) {
+  if (e && e.npc) damage(e, 0, 'burn');
+  else if (e && !e.isPlayer && !hit.has(e)) {
+    hit.add(e);
     e.frozen = 0;
     if (TD[map[i]].water) { steam(x, y); damage(e, 1, 'burn'); }
     else { if (!MONS[e.type]?.immune?.burn) e.burning = Math.max(e.burning, 4); damage(e, center ? 4 : 2, 'burn'); }
@@ -674,8 +1226,9 @@ function castFire(tr){
   launch(tr.cells, 32, '*', [1,.6,.2], (x, y) => ember(x, y + .2, [1,.5,.1]), () => {
     const c = tr.cells.length ? tr.cells[tr.cells.length - 1] : tr.hit || [player.x, player.y];
     let bog = 0;
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { fireTile(c[0] + dx, c[1] + dy, !dx && !dy); if (inb(c[0]+dx, c[1]+dy) && TD[map[idx(c[0]+dx, c[1]+dy)]].bog) bog++; }
-    if (tr.hit) fireTile(tr.hit[0], tr.hit[1], false);
+    const hit = new Set();
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { fireTile(c[0] + dx, c[1] + dy, !dx && !dy, hit); if (inb(c[0]+dx, c[1]+dy) && TD[map[idx(c[0]+dx, c[1]+dy)]].bog) bog++; }
+    if (tr.hit) fireTile(tr.hit[0], tr.hit[1], false, hit);
     flash(c[0], c[1], 6, [1,.5,.15], 2.4, 650);
     shake(5); Snd.boom();
     if (bog >= 3 && rnd() < .85) {   // swamp gas!
@@ -683,11 +1236,35 @@ function castFire(tr){
       setTimeout(() => { Snd.boom(); shake(9); flash(c[0], c[1], 8, [1,.6,.2], 3, 800);
         for (let k = 0; k < 40; k++) { const a = rnd() * PI * 2, s = 2 + rnd() * 5; part(c[0], c[1], Math.cos(a) * s, Math.sin(a) * s, .6, pick(['*','^','°']), [1, .5 + rnd() * .4, .15], -.5); } }, 180);
       for (const e of ents) if (!e.dead && cheb(e, {x:c[0], y:c[1]}) <= 2) damage(e, 3, 'burn', 180);
+      if (cheb(npc, {x:c[0], y:c[1]}) <= 2) damage(npc, 0, 'burn');
     }
     endTurn();
   });
 }
-function freezeTile(x, y, walls){
+// holy light: a pillar of it falls from somewhere very high up. The dead burn; the living just feel warm.
+function castHoly(tr){
+  const c = tr.cells.length ? tr.cells[tr.cells.length - 1] : tr.hit || [player.x, player.y];
+  log('You raise your hand. Light falls from somewhere very far above.', [1,.92,.6]); Snd.choir();
+  pillars.push({x:c[0], y:c[1], t0:now(), dur:1500});
+  setTimeout(() => { flash(c[0], c[1], 8, [1,.9,.6], 3.6, 1400); shake(4); }, 120);
+  for (let k = 0; k < 40; k++) { const a = rnd() * PI * 2, r = rnd() * 2.4;
+    part(c[0] + Math.cos(a) * r, c[1] + Math.sin(a) * r * .8, (rnd() - .5) * .4, -.6 - rnd() * 1.4, 1 + rnd() * .8, pick(['+', '·', '*', '†']), [1, .85 + rnd() * .15, .5 + rnd() * .4], -.25, .1 + rnd() * .3); }
+  const hit = new Set();
+  let burned = 0;
+  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+    const x = c[0] + dx, y = c[1] + dy, d = Math.hypot(dx, dy);
+    if (d > 2.3 || !inb(x, y) || !los(c[0], c[1], x, y)) continue;
+    const e = entAt(x, y);
+    if (!e || e.npc || hit.has(e)) continue;
+    hit.add(e);
+    if (MONS[e.type]?.undead) { burned++; damage(e, d < .5 || covers(e, c[0], c[1]) ? 12 : 8, 'holy', 250); if (!e.dead) e.smite = 3; }
+    else if (!e.isPlayer) damage(e, 0, 'holy', 250);
+  }
+  if (burned) log(burned > 1 ? 'The dead scream and smoke in the light!' : 'The dead thing screams and smokes in the light!', [1,.85,.5]);
+  else log('The light is warm, and harms nothing living.', [.9,.85,.7]);
+  endTurn();
+}
+function freezeTile(x, y, walls, hit = new Set()){
   if (!inb(x, y)) return;
   const i = idx(x, y), t = map[i];
   frostT[i] = now();
@@ -698,19 +1275,22 @@ function freezeTile(x, y, walls){
   else if (t === 'TORCH') { map[i] = 'TORCHOUT'; log('The torch is snuffed out by frost.', [.6,.8,1]); }
   if (fire[i] > 0) { fire[i] = 0; steam(x, y); }
   const e = entAt(x, y);
-  if (e && !e.isPlayer && !e.npc) {
+  if (e && !e.isPlayer && !e.npc && !hit.has(e)) {
+    hit.add(e);
     if (MONS[e.type]?.immune?.frost) damage(e, 1, 'frost');
-    else { if (!e.frozen) log(`The ${e.name} is frozen solid!`, [.6,.9,1]); e.frozen = 5; e.burning = 0; damage(e, 1, 'frost'); }
+    else if (e.boss) { if (!e.frozen) log(`Frost crusts over ${e.name}, slowing it for a moment!`, [.6,.9,1]); e.frozen = 1; e.burning = 0; damage(e, 3, 'frost'); }
+    else { if (!e.frozen) log(`The ${e.name} is frozen solid!`, [.6,.9,1]); e.frozen = 5; e.burning = 0; damage(e, 3, 'frost'); }
   }
   frostBits(x, y);
 }
 function castFrost(tr){
   log('A freezing beam lances out!', [.6,.9,1]); Snd.frost(); state.obsMsg = 0;
   launch(tr.cells, 18, '*', [.7,.95,1], (x, y) => frostBits(x, y), () => {
-    tr.cells.forEach(([x, y]) => freezeTile(x, y, false));
+    const hit = new Set();
+    tr.cells.forEach(([x, y]) => freezeTile(x, y, false, hit));
     const c = tr.hit || tr.cells[tr.cells.length - 1];
     if (c) {
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) freezeTile(c[0] + dx, c[1] + dy, true);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) freezeTile(c[0] + dx, c[1] + dy, true, hit);
       flash(c[0], c[1], 5, [.5,.8,1], 1.8, 600);
     }
     Snd.freeze();
@@ -721,7 +1301,7 @@ function castFrost(tr){
 // =====================================================================
 //  Mouse travel
 // =====================================================================
-const canSee = e => { const i = idx(e.x, e.y); return vis[i] && (lumS[i] > .05 || cheb(e, player) <= 5); };
+const canSee = e => e.s > 1 ? cellsOf(e).some(([x, y]) => vis[idx(x, y)]) : !!vis[idx(e.x, e.y)];
 const visibleMonsters = () => ents.filter(e => !e.isPlayer && !e.npc && !e.dead && canSee(e));
 let pathCache = {key:'', path:null};
 function findPath(sx, sy, tx, ty){
@@ -788,12 +1368,25 @@ const HINT = {SECRET:'This wall is different from the rest. Walk into it.', ALTA
       HEARTH:'The kettle sings quietly to itself.', SHELF:'Books on birds, boats, bread, and "Being Brave, Vol. II".',
       BED:'A patchwork quilt. Every patch is a different colour.', WINDOW:'Through the glass: weather, and the long road.',
       TABLE:'Two bowls, two spoons. He always sets two.', TREE:'An old tree. Its bark is warm where the light touches it.',
-      ROCK:'Cold mountain stone.', DEADTREE:'A dead tree, bone-white and patient.', VENT:'A vent breathes scalding steam.'};
+      ROCK:'Cold mountain stone.', DEADTREE:'A dead tree, bone-white and patient.', VENT:'A vent breathes scalding steam.',
+      CAMPFIRE:'A small, determined fire. Eli keeps it going.', EGGSAC:'A pulsing egg sac. Fire would end it.',
+      BRAMBLE:'Dry brambles, thick as a wall. Something glints behind them. Fire would clear them.',
+      GATE:() => state.floor === 2 ? `A heavy iron gate. Old miners' torches are set round here: light all four and it opens. (${level.torches.filter(([x, y]) => map[idx(x, y)] === 'TORCH').length} of 4 lit)`
+        : 'A heavy gate with no handle and no lock. A dull rune nearby is meant to open it.',
+      CHASM:'A crevasse. You cannot cross it, but fire can.', PILLAR:'A thick stone pillar. Good to hide behind.',
+      SARCO:'A sealed sarcophagus. Let it stay sealed.', RUNE:'A rune, dull and thirsty. Water lies against it. Lightning in that water might wake it.',
+      RUNELIT:'The rune blazes with stored lightning.', BARRICADE:'Old coffins, stacked into a barricade. Dry wood. Very dry wood.',
+      GRAVEDONE:"Marta's grave, with a pressed flower on it."};
 const HINT_X = {WATER:'Lightning arcs through connected water.', BOG:'Conducts lightning. Fire may ignite the swamp gas.',
   ICE:'Walkable. Fire melts it back to water.', TORCH:'Lights the area. Frost snuffs it.', CHEST:'Bump to open.', DOOR:'Bump to open.',
-  STAIRS:'Step on it to finish the demo.', OBSIDIAN:'Safe to walk on.', SNOW:'Fire melts it.', PINE:'Burns.', REEDS:'Burns.',
+  STAIRS:'Step on it to go down to the next floor.', UPSTAIRS:'The way you came. Not today.', WEB:'Sticky. Walking in will hold you a turn or two. Burns in a flash.',
+  GRAVE:'Walk into it.', TFLOOR:'', BONES:'', OBSIDIAN:'Safe to walk on.', SNOW:'Fire melts it.', PINE:'Burns.', REEDS:'Burns.',
   GRASS:'Burns.', MEADOW:'Burns, slowly.', FLOWER:'Burns.', PLANK:'Nothing in the old man\'s house will burn. He made sure.'};
-const ITEM_FACT = {potion:'Step on it: +10 HP.', scroll:'Step on it: max MP +4. Fire destroys it.', gold:'Step on it to pick up.'};
+const ITEM_FACT = {potion:`Goes in your pack. Drink with 5: +${POTION_HEAL} HP and cures poison.`, mana:`Goes in your pack. Drink with 6: +${MANA_GAIN} MP.`,
+  scroll:'Step on it: max MP +4. Fire destroys it.', gold:'Step on it to pick up.', specs:'Eli lost these. Bring them back to him.',
+  lily:'Eli wants three of these for his tea.', hammer:"Eli's old hammer. He'll want it back.", tome:'Step on it to learn the spell inside.',
+  stone:'The thing you came for.'};
+const hintFor = k => typeof HINT[k] === 'function' ? HINT[k]() : HINT[k];
 
 // ---------- right-click inspection, in the gonzo register ----------
 let inspect = null;
@@ -815,7 +1408,7 @@ function buildInspect(x, y){
       key = 'player'; title = state.mem.name ? `${state.mem.name} (you)` : 'You';
       text = e.burning > 0 ? condText('pl:burn', G.burningPlayer) : e.frozen > 0 ? condText('pl:frozen', G.frozenPlayer) : gonzoPick(kind, G[kind]);
       if (e.burning > 0) title += ', on fire'; else if (e.frozen > 0) title += ', frozen';
-      sub = `${Math.max(0, e.hp)}/${e.maxhp} HP · ${e.mp}/${e.maxmp} MP` + (state.armor ? ` · armour ${state.armor}` : '');
+      sub = `${Math.max(0, e.hp)}/${e.maxhp} HP · ${e.mp}/${e.maxmp} MP · AC ${playerAC()}` + (e.poison ? ' · poisoned' : '');
       col = [1,.95,.75];
     } else if (e.npc) {
       const kind = state.mem.knowsName ? 'manNamed' : 'man';
@@ -825,9 +1418,13 @@ function buildInspect(x, y){
     } else {
       const cn = condName(e);
       key = 'mon:' + e.type + (e.burning > 0 ? ':burn' : e.frozen > 0 ? ':frozen' : ''); title = capF(cn);
+      if (e.minion) key = 'mon:minion';
       text = e.burning > 0 ? condText('mon:burn', G.burningMon, e.name) : e.frozen > 0 ? condText('mon:frozen', G.frozenMon, e.name)
         : gonzoPick(key, G.mons[e.type] || ['Something with teeth. I could not get a good look at it and I did not try very hard.']);
-      const d = describe(x, y) || ''; sub = d.slice(cn.length + 1).replace(/^(\d+\/\d+)/, '$1 HP');
+      const d = describe(x, y) || ''; sub = d.slice(cn.length + 1).replace(/^(\d+\/\d+)/, '$1 HP').replace(/^· /, '');
+      if (e.boss) sub = MONS[e.type].title + ' · ' + sub;
+      if (e.carry) K.push(G.states.specs);
+      if (e.phase === 'charge') K.push(G.states.charging); else if (e.spent) K.push(G.states.spent);
       if (/^big /.test(e.name)) K.push(G.states.big); else if (/^scrawny /.test(e.name)) K.push(G.states.scrawny);
       if (!e.burning && !e.frozen && e.hp < e.maxhp * .5) K.push(G.states.hurt);
       if (TD[map[i]].water && !(MONS[e.type].immune || {}).shock) K.push(G.states.inWater);
@@ -837,13 +1434,14 @@ function buildInspect(x, y){
     const it = items.find(o => o.x === x && o.y === y);
     if (it && vis[i]) {
       key = 'item:' + it.kind; title = capF(ITEMS[it.kind].name);
+      if (it.kind === 'tome') title = `Spellbook of ${SPELLS[spellKey(it.spell)].name}`;
       text = gonzoPick(key, G.items[it.kind]); fact = ITEM_FACT[it.kind] || ''; col = ITEMS[it.kind].col.map(v => .5 + v * .5);
     } else {
       const t = map[i]; key = 'tile:' + t; title = capF(TNAME[t] || t);
       const D = (t === 'ALTAR' || t === 'ALTARSPENT') ? altarDeity(i) : null;
       if (D) { title = `Altar of ${D.name}`; sub = D.title + (t === 'ALTARSPENT' ? ' · spent' : ''); col = D.col; }
       text = gonzoPick(key + (D ? ':' + altars[i] : ''), D && t === 'ALTAR' ? D.gonzo : G.tiles[t] || ['A thing. Not much to say about it, which in this place is a luxury.']);
-      fact = HINT[t] || HINT_X[t] || '';
+      fact = hintFor(t) || HINT_X[t] || '';
       if (fire[i] > 0 && vis[i]) { key += ':burn'; title = 'Burning ' + (TNAME[t] || t); text = condText('tile:burn', G.burningTile, TNAME[t] || t); fact = TD[t].block ? 'On fire. Soon it will be ash.' : 'On fire. Standing in it sets you alight.'; }
       if (snowAcc[i] > .5 && TD[t].snowy) K.push(G.states.snowed);
       if (!vis[i]) K.push(G.states.remembered);
@@ -867,13 +1465,16 @@ function buildHudInspect(tx, ty){
     else if (hudZones.hp && tx >= hudZones.hp[0] && tx < hudZones.hp[1]) { k = 'hp'; title = 'Health'; }
     else if (hudZones.mp && tx >= hudZones.mp[0] && tx < hudZones.mp[1]) { k = 'mp'; title = 'Mana'; }
     else if (hudZones.gold && tx >= hudZones.gold[0] && tx < hudZones.gold[1]) { k = 'gold'; title = 'Gold'; }
-  } else if (ty === VH + 2) {
-    const b = spellBtns.find(b => tx >= b.c0 && tx < b.c1);
-    if (b) { k = b.k; title = `${SPELLS[b.k].name} · ${cost(b.k)} MP`; }
+    else if (hudZones.ac && tx >= hudZones.ac[0] && tx < hudZones.ac[1]) { k = 'ac'; title = `Armour class ${playerAC()}`; }
+  } else if (ty === VH + 2 || ty === VH + 3) {
+    const b = spellBtns.find(b => VH + b.row === ty && tx >= b.c0 && tx < b.c1);
+    if (b && b.k in SPELLS) { k = knows(b.k) ? SPELLS[b.k].id : 'unknown'; title = knows(b.k) ? `${SPELLS[b.k].name} · ${cost(b.k)} MP` : 'A spell you do not know yet'; }
+    else if (b) { k = b.k; title = {potion:'Healing potions', mana:'Mana potions', pack:'Your pack'}[b.k]; }
   }
   if (!k) return null;
+  const sc = Object.values(SPELLS).find(s => s.id === k);
   return {hud:true, hx:tx, key:'hud:' + k, title, sub:'', text:gonzoPick('hud:' + k, G[k]), fact:'',
-    col:k in SPELLS ? SPELLS[k].col.map(v => .4 + v * .6) : [.75,.95,.8], t0:now(), turn:state.turn};
+    col:sc ? sc.col.map(v => .4 + v * .6) : [.75,.95,.8], t0:now(), turn:state.turn};
 }
 const INS_W = 40;
 const inspectTyping = () => inspect && inspect.lines && (now() - inspect.t0) * .16 < inspect.total;
@@ -957,7 +1558,7 @@ function pray(i, x, y){
   map[i] = 'ALTARSPENT';
   if (D.gift === 'mp') { P.maxmp += 5; P.mp = P.maxmp; }
   else if (D.gift === 'both') { P.maxhp += 3; P.maxmp += 3; P.hp = P.maxhp; P.mp = P.maxmp; }
-  else if (D.gift === 'armor') state.armor = (state.armor || 0) + 1;
+  else if (D.gift === 'armor') state.acBonus = (state.acBonus || 0) + 1;
   else if (D.gift === 'cost') state.costDown = (state.costDown || 0) + 1;
   state.prayed = (state.prayed || 0) + 1;
   flash(x, y, 7, D.col, 2.2, 1400); Snd.zone(); Snd.potion();
@@ -976,10 +1577,14 @@ function describe(x, y){
   const e = entAt(x, y);
   if (e && (e.isPlayer || canSee(e))) {
     if (e.isPlayer) return (e.burning > 0 ? 'you, on fire' : e.frozen > 0 ? 'you, frozen' : 'you') + (state.belief ? ' (you believe in yourself)' : '');
-    if (e.npc) return state.mem.knowsName ? 'Eli, the old man' : 'an old man';
+    if (e.npc) return (state.mem.knowsName ? 'Eli, the old man' : 'an old man') + ' · trade, talk';
     const D = MONS[e.type], tags = [];
+    if (D.hydra) return `${condName(e)} · ${e.heads} head${e.heads === 1 ? '' : 's'}` + (e.stumps ? ` · ${e.stumps} stump${e.stumps > 1 ? 's' : ''}` : '') + ' · burn, then cut';
     if (D.immune?.burn) tags.push('fireproof'); if (D.immune?.frost) tags.push('frostproof'); if (D.immune?.shock) tags.push('shockproof');
-    if (D.weak?.burn) tags.push('hates fire'); if (D.weak?.frost) tags.push('hates frost'); if (D.regen) tags.push('regenerates');
+    if (D.immune?.melee) tags.push('blades pass through');
+    if (D.weak?.burn) tags.push('hates fire'); if (D.weak?.frost) tags.push('hates frost'); if (D.weak?.shock) tags.push('hates lightning');
+    if (D.undead) tags.push('undead'); if (D.regen) tags.push('regenerates'); if (D.poison) tags.push('venomous'); if (e.ac >= 17) tags.push('heavily armoured');
+    if (e.spent) tags.push('exhausted');
     return `${condName(e)} ${Math.max(0, e.hp)}/${e.maxhp}` + (tags.length ? ' · ' + tags.join(', ') : '');
   }
   const it = items.find(o => o.x === x && o.y === y);
@@ -1048,7 +1653,8 @@ function drawTiles(t, tn){
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
     const i = y*MW + x; if (!seen[i]) continue;
     const key = map[i], d = TD[key], z = zone[i], Zd = ZONES[z];
-    if (!vis[i]) { const m = d.block ? .15 : .085;
+    const far = !vis[i];
+    if (far && !farv[i]) { const m = d.block ? .15 : .085;
       if (key === 'TORCH' || key === 'TORCHOUT') drawTorch(x, y, t, hash(i), 'mem', 1, m*.9, m*.8, m*.7); else glyph(d.ch, x, y, m*.8, m, m*.9); continue; }
     let r = lr[i], g = lg[i], b = lb[i];
     let ch = d.ch, cr = d.col[0], cg = d.col[1], cb = d.col[2], ox = 0, oy = 0, rot = 0, br = 1, em = 0;
@@ -1084,7 +1690,7 @@ function drawTiles(t, tn){
           part(x, y, W.dir * (2 + rnd() * 3), -.5 + rnd(), 2 + rnd(), pick([',','`','\'']), pick([[.4,.8,.3],[.8,.6,.25],[.7,.75,.3]]), .4);
         if (snow > .3 && wind > .35 && rnd() < .003) for (let k = 0; k < 3; k++) part(x + (rnd() - .5) * .4, y - .4, W.dir * (1 + rnd()), .3 + rnd(), 1, '·', [.95,.97,1], 1);
       }
-    } else if (key === 'TORCH' || key === 'HEARTH') {
+    } else if (key === 'TORCH' || key === 'HEARTH' || key === 'CAMPFIRE') {
       const f = flick(t, h*50);
       r = g = b = 0; em = .85 + .35*f; cr = 1; cg = .5 + .3*f; cb = .18; oy = -f*.8;
       if (rnd() < .07) ember(x, y - .3);
@@ -1093,6 +1699,13 @@ function drawTiles(t, tn){
       r = g = b = 0; em = .8 + .4 * p; cr = .6 + .4 * c[0]; cg = .6 + .4 * c[1]; cb = .6 + .4 * c[2]; oy = -p * 1.2;
       if (rnd() < .06) part(x + (rnd() - .5) * .6, y - .2, (rnd() - .5) * .3, -.5 - rnd() * .5, 1.4, pick(['·', '°', '*']), c, -.15); }
     else if (key === 'SECRET') { const s = (t * .19 + h * 7) % 1; em = .06 + (s < .04 ? .5 * (1 - s / .04) : 0) + .04 * Math.sin(t * 1.3 + h * 20); }
+    else if (key === 'RUNELIT') { const p = .5 + .5 * Math.sin(t * 4 + h * 9); r = g = b = 0; em = 1 + .5 * p; cr = .65; cg = .85; cb = 1; oy = -p;
+      if (rnd() < .05) sparks(x, y, 1); }
+    else if (key === 'RUNE') { em = .08 + .06 * Math.sin(t * 1.1 + h * 5); }
+    else if (key === 'EGGSAC') { const p = Math.pow(.5 + .5 * Math.sin(t * 2.4 + h * 9), 3); em = .1 + .25 * p; ox = Math.sin(t * 9 + h) * .6 * p; }
+    else if (key === 'WEB') { em = .03 + (((t * .2 + h * 6) % 1) < .03 ? .35 : 0); }
+    else if (key === 'GRAVEDONE') { const p = .5 + .5 * Math.sin(t * 1.4); em = .35 + .2 * p; }
+    else if (key === 'CHASM') { r *= .25; g *= .25; b *= .3; ch = ((t * .4 + h * 5) | 0) % 5 === 0 ? '▒' : '░'; }
     else if (key === 'VENT') { const f = flick(t * 1.5, h * 30); r = g = b = 0; em = .5 + .4 * f; if (rnd() < .05) steam(x, y - .2); }
     else if (key === 'OBSIDIAN') { const s = (t * .2 + h * 5) % 1; if (s < .03) { em += .8 * (1 - s / .03); } em += .04; }
     else if (key === 'ICE' || key === 'ICEWALL') {
@@ -1122,8 +1735,9 @@ function drawTiles(t, tn){
       R = R * (1 - f * .8) + fc[0] * fk * f; G = G * (1 - f * .8) + fc[1] * fk * f; B = B * (1 - f * .8) + fc[2] * fk * f;
       if (f > .38) fogQ.push(x, y, (f - .38) * .9, fc[0] * fk * 1.6, fc[1] * fk * 1.6, fc[2] * fk * 1.6, n);
     }
+    if (far) { R *= .38; G *= .38; B *= .42; }   // beyond your circle of sight: dim shapes only
     if (key === 'TORCH' || key === 'TORCHOUT') {
-      const lk = Math.min(1.2, (lr[i] + lg[i] + lb[i]) / 3 + (key === 'TORCH' ? .5 : .08));
+      const lk = Math.min(1.2, (lr[i] + lg[i] + lb[i]) / 3 + (key === 'TORCH' ? .5 : .08)) * (far ? .45 : 1);
       drawTorch(x, y, t, h, key === 'TORCH', 1, .62 * lk, .4 * lk, .22 * lk);
     } else glyph(ch, x, y, R, G, B, ox, oy, rot);
     // snow gathering on tops of trees, rocks, roofs
@@ -1144,17 +1758,19 @@ function drawTiles(t, tn){
   }
 }
 
-function drawItems(){
+function drawItems(t){
   for (const it of items) {
-    const i = idx(it.x, it.y); if (!vis[i] || lumS[i] < .05) continue;
-    const I = ITEMS[it.kind];
-    glyph(I.ch, it.x, it.y, I.col[0]*(.3 + lr[i]), I.col[1]*(.3 + lg[i]), I.col[2]*(.3 + lb[i]), 0, Math.sin(now()/400 + i)*.8);
+    const i = idx(it.x, it.y); if (!vis[i]) continue;
+    const I = ITEMS[it.kind], glow = it.kind === 'tome' || it.kind === 'stone' || it.kind === 'lily' ? .8 + .4 * Math.sin(t * 3 + i) : 0;
+    const col = it.kind === 'tome' ? SPELLS[spellKey(it.spell)].col : I.col;
+    glyph(I.ch, it.x, it.y, col[0]*(.3 + lr[i] + glow), col[1]*(.3 + lg[i] + glow), col[2]*(.3 + lb[i] + glow), 0, Math.sin(now()/400 + i)*.8);
+    if (glow && rnd() < .06) part(it.x + (rnd() - .5) * .6, it.y, 0, -.5, 1, '·', col, -.1);
   }
 }
 
 function drawEntity(e, t, tn){
-  const i = idx(e.x, e.y), T = e.tf, D = MONS[e.type] || {};
-  let [cr, cg, cb] = e.col, ox = T.ox * TW, oy = T.oy;
+  const i = idx(e.x, e.y), T = e.tf, D = MONS[e.type] || {}, off = (e.s - 1) / 2;
+  let [cr, cg, cb] = e.col, ox = T.ox * TW, oy = T.oy + (e.s > 1 ? TH * .3 : 0);
   if (e.isPlayer) { [cr, cg, cb] = state.belief ? [1, .9 + .08 * Math.sin(t * 2), .55] : [1, 1, .85];
     if (state.belief && rnd() < .05) part(e.vx + (rnd() - .5) * .8, e.vy + (rnd() - .5) * .6, 0, -.4, .8, '·', [1,.9,.5]); }
   else if (!e.npc) { cr *= .35 + .8*lr[i]; cg *= .35 + .8*lg[i]; cb *= .35 + .8*lb[i]; }
@@ -1163,7 +1779,13 @@ function drawEntity(e, t, tn){
   if (D.glow) { const f = .8 + .3 * flick(t, e.seed); cr *= f; cg *= f; cb *= f; }
   if (e.type === 'wisp' || e.type === 'wraith') { const a = .6 + .4 * Math.sin(t * 5 + e.seed); cr *= a; cg *= a; cb *= a;
     if (rnd() < .08) part(e.vx, e.vy + .2, (rnd() - .5) * .3, .2, .7, '·', e.col.map(c => c * .6)); }
-  if ((e.type === 'imp' || e.type === 'golem') && rnd() < .12) ember(e.vx, e.vy - .2);
+  if ((e.type === 'imp' || e.type === 'golem' || e.type === 'dragon') && rnd() < .12 * e.s) ember(e.vx + off + (rnd() - .5) * off * 2, e.vy - .2);
+  if (e.phase === 'charge') { const k = (3 - e.pt) / 2; cr = 1; cg = .5 + .4 * k * (.5 + .5 * Math.sin(t * 20)); cb = .2 + .5 * k; ox += Math.sin(t * 50) * k * 1.5;
+    if (rnd() < .4) part(e.vx + off + (rnd() - .5) * 3, e.vy + off + (rnd() - .5) * 3, 0, 0, .4, pick(['·', '*']), [1, .6, .2], 0); }
+  if (e.spent && rnd() < .05) part(e.vx + off, e.vy - .4, (rnd() - .5) * .3, -.6, 1.4, '°', [.55,.55,.55], -.08);
+  if (e.cast) { const p = .5 + .5 * Math.sin(t * 9); cr = .7 + .3 * p; cg = .5 + .2 * p; cb = 1;
+    if (rnd() < .3) part(e.vx + (rnd() - .5) * 1.4, e.vy + (rnd() - .5) * 1.4, (e.vx - e.x) * 0, -.3, .6, '·', e.cast.kind === 'ray' ? [.6,.3,1] : [.6,.85,1], 0); }
+  if (e.poison && e.isPlayer && rnd() < .04) part(e.vx + (rnd() - .5) * .5, e.vy, 0, -.4, .9, '•', [.5,1,.3], -.1);
   if (D.puff && ZONES[zone[i]].outdoor && rnd() < .02) for (let k = 0; k < 2; k++) part(e.vx + .2 * e.face, e.vy - .3, e.face * .4, -.2, 1, '°', [.9,.92,1], -.05);
   if (e.frozen) { cr = .6; cg = .9; cb = 1; ox += Math.sin(t*45) * .6; if (rnd() < .03) frostBits(e.x, e.y); }
   if (e.burning) { const f = rnd(); cr = 1; cg = .4 + .4*f; cb = .15; if (rnd() < .3) ember(e.vx, e.vy); }
@@ -1183,7 +1805,7 @@ function drawEntity(e, t, tn){
       const q = p - j * .05; if (q <= 0) continue;
       const f = A.f(q, e.act.dx, e.act.dy, e.act.s, t), a = .32 / j;
       ctx.globalAlpha = a;
-      glyph(e.ch, e.x + f.ox, e.y + f.oy, cr, cg, cb, 0, T.oy, T.rot - (ATK[e.act.style].f(p, e.act.dx, e.act.dy, e.act.s, t).rot - f.rot), T.sx, T.sy, true);
+      glyph(e.ch, e.x + off + f.ox, e.y + off + f.oy, cr, cg, cb, 0, oy, T.rot - (ATK[e.act.style].f(p, e.act.dx, e.act.dy, e.act.s, t).rot - f.rot), T.sx, T.sy, true);
     }
     ctx.globalAlpha = 1;
     // the whip's swoosh arc
@@ -1195,12 +1817,88 @@ function drawEntity(e, t, tn){
     }
   }
   ctx.globalAlpha = T.alpha;
-  glyph(e.ch, e.vx, e.vy, cr, cg, cb, ox, oy, T.rot, T.sx, T.sy);
+  glyph(e.ch, e.vx + off, e.vy + off, cr, cg, cb, ox, oy, T.rot, T.sx * (e.s > 1 ? 1.25 : 1), T.sy);
   ctx.globalAlpha = 1;
-  if (!e.isPlayer && !e.npc && e.hp < e.maxhp && !e.dead) {
+  // the hydra's heads, swaying on their necks; stumps show as red nubs
+  if (D.hydra && !e.dead) {
+    const cx = e.vx + off, n = e.heads + e.stumps;
+    ctx.font = PFONT;
+    for (let k = 0; k < n; k++) {
+      const a = (k + .5) / n * PI - PI, stump = k >= e.heads, sw = Math.sin(t * 2.2 + k * 1.7) * .12;
+      const hx = cx + Math.cos(a + sw) * (stump ? .7 : 1.05), hy = e.vy - .15 + Math.sin(a + sw) * (stump ? .55 : .95);
+      ctx.strokeStyle = css(cr * .6, cg * .6, cb * .6); ctx.lineWidth = 2.2;
+      ctx.beginPath(); ctx.moveTo(sx(cx), sy(e.vy + .35)); ctx.lineTo(sx(hx), sy(hy)); ctx.stroke();
+      const c = stump ? [1, .3, .25] : [cr, cg, cb];
+      ctx.fillStyle = css(c[0] * 1.1, c[1] * 1.1, c[2] * 1.1); ctx.fillText(stump ? '•' : (Math.sin(t * 3 + k) > .7 ? 'O' : 'o'), sx(hx), sy(hy));
+    }
+    ctx.font = FONT; ctx.lineWidth = 1.3;
+  }
+  if (!e.isPlayer && !e.npc && !e.boss && e.hp < e.maxhp && !e.dead) {
     ctx.fillStyle = css(.9, .25, .2);
     ctx.fillRect(sx(e.vx) - TW / 2 + 2, sy(e.vy) + TH / 2 - 2, (TW - 4) * Math.max(0, e.hp) / e.maxhp, 2);
   }
+}
+// the pillar of holy light
+function drawPillars(tn){
+  pillars = pillars.filter(Pl => {
+    const p = (tn - Pl.t0) / Pl.dur; if (p >= 1) return false;
+    const fall = Math.min(1, p * 6), fade = p < .15 ? 1 : 1 - (p - .15) / .85, cx = sx(Pl.x), cy = sy(Pl.y), top = sy(CYr - 2);
+    const w = TW * (1.6 + .5 * Math.sin(tn / 60)) * (.6 + .4 * fade), bottom = top + (cy + TH * .4 - top) * fall;
+    const gr = ctx.createLinearGradient(0, top, 0, bottom);
+    gr.addColorStop(0, 'rgba(255,240,190,0)'); gr.addColorStop(.6, `rgba(255,235,170,${.35 * fade})`); gr.addColorStop(1, `rgba(255,250,225,${.8 * fade})`);
+    ctx.fillStyle = gr; ctx.fillRect(cx - w, top, w * 2, bottom - top);
+    ctx.fillStyle = `rgba(255,255,240,${.7 * fade})`; ctx.fillRect(cx - w * .25, top, w * .5, bottom - top);
+    // rings spreading over the floor where it lands
+    for (let k = 0; k < 3; k++) {
+      const q = (p * 1.6 - k * .22); if (q <= 0 || q >= 1) continue;
+      ctx.strokeStyle = `rgba(255,230,160,${.7 * (1 - q)})`; ctx.lineWidth = 2.5 * (1 - q) + .5;
+      ctx.beginPath(); ctx.ellipse(cx, cy + TH * .2, TW * 2.8 * q, TH * 1.6 * q, 0, 0, PI * 2); ctx.stroke();
+    }
+    ctx.lineWidth = 1.3;
+    return true;
+  });
+}
+// slashes left by critical hits
+function drawSlashes(tn){
+  slashes = slashes.filter(S => {
+    const p = (tn - S.t0) / S.dur; if (p >= 1) return false;
+    const grow = Math.min(1, p * 4), fade = 1 - p, L = S.len * grow;
+    const ax = sx(S.x - Math.cos(S.a) * L), ay = sy(S.y - Math.sin(S.a) * L * .8), bx = sx(S.x + Math.cos(S.a) * L), by = sy(S.y + Math.sin(S.a) * L * .8);
+    ctx.lineCap = 'round';
+    ctx.globalAlpha = .55 * fade; ctx.strokeStyle = css(...S.col); ctx.lineWidth = 7 * fade + 1;
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    ctx.globalAlpha = fade; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    ctx.globalAlpha = 1; ctx.lineWidth = 1.3; ctx.lineCap = 'butt';
+    return true;
+  });
+}
+// telegraphed attacks: the floor tells you where not to be
+function drawDanger(t){
+  const x0 = Math.max(0, Math.floor(CXr) - 1), x1 = Math.min(MW - 1, Math.floor(CXr) + WVW + 1);
+  const y0 = Math.max(0, Math.floor(CYr) - 1), y1 = Math.min(MH - 1, Math.floor(CYr) + WVH + 1);
+  const p = .5 + .5 * Math.sin(t * 8);
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    const k = danger[idx(x, y)]; if (!k || !vis[idx(x, y)]) continue;
+    const c = k === 1 ? [1, .35, .1] : k === 2 ? [.6, .3, 1] : [.5, .8, 1];
+    ctx.globalAlpha = (k === 3 ? .1 : .05) + .07 * p;
+    ctx.fillStyle = css(...c); ctx.fillRect(sx(x) - TW / 2, sy(y) - TH / 2, TW, TH);
+    ctx.globalAlpha = .5 + .4 * p;
+    if (k === 3) glyph('×', x, y, c[0], c[1], c[2], 0, 0, 0, 1, 1, true);
+  }
+  ctx.globalAlpha = 1;
+}
+// a boss's health, across the top of the view
+function drawBossBar(t){
+  const b = ents.find(e => e.boss && e.awake && !e.dead);
+  if (!b || dlg) return;
+  const D = MONS[b.type], name = ` ${b.name.toUpperCase()} `;
+  const frac = D.hydra ? b.heads / 9 : clamp(b.hp / b.maxhp, 0, 1), n = 30, f = Math.round(frac * n);
+  const x0 = Math.floor((VW - n) / 2);
+  ctx.fillStyle = 'rgba(0,0,0,.75)'; ctx.fillRect((x0 - 1) * TW, 0, (n + 2) * TW, TH * 2.1);
+  scrText(Math.floor((VW - name.length) / 2), 0, name, b.col.map(v => .5 + v * .5));
+  if (D.hydra) scrText(x0, 1, `${b.heads} heads`.padEnd(10) + (b.stumps ? `${b.stumps} bleeding stump${b.stumps > 1 ? 's' : ''}` : ''), [.6,1,.6]);
+  else { scrText(x0, 1, '█'.repeat(f), [1, .3 + (b.spent ? .5 : 0), .25]); scrText(x0 + f, 1, '░'.repeat(n - f), [.35,.15,.15]); }
 }
 function drawEnts(t, tn){
   for (const e of ents) {
@@ -1210,7 +1908,7 @@ function drawEnts(t, tn){
     drawEntity(e, t, tn);
   }
   dying = dying.filter(D => {
-    if (tn >= D.at) { shatter(D.e); return false; }
+    if (tn >= D.at) { shatter(D.e); if (D.e.s > 1) { shake(8); Snd.slam(); } return false; }
     updateEnt(D.e, t, tn); drawEntity(D.e, t, tn); return true;
   });
 }
@@ -1235,7 +1933,7 @@ function drawBolts(tn){
         for (let n = 0; n < 4; n++) { fx += (rnd()-.5)*1.6; fy += (rnd()-.5)*1.1; fp.push([fx, fy]); } b.forks.push(fp); } }
     ctx.globalAlpha = (1 - p*p) * (rnd() < .15 ? .4 : 1);
     ctx.lineJoin = 'miter';
-    ctx.strokeStyle = 'rgb(110,160,255)'; ctx.lineWidth = 6; strokePath(b.jag);
+    ctx.strokeStyle = b.col ? css(...b.col) : 'rgb(110,160,255)'; ctx.lineWidth = 6; strokePath(b.jag);
     ctx.lineWidth = 2; b.forks.forEach(f => strokePath(f.map(([x, y]) => [sx(x), sy(y)])));
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.2; strokePath(b.jag);
     ctx.globalAlpha = 1; ctx.lineJoin = 'round';
@@ -1254,6 +1952,7 @@ function updateProjs(tn){
 function drawProjs(){ for (const pr of projs) glyph(pr.ch, pr.x, pr.y, pr.col[0]*1.3, pr.col[1]*1.3, pr.col[2]*1.3, 0, 0, now()/60); }
 
 function drawParticles(dt){
+  if (now() < hitStop) dt *= .06;
   ctx.font = PFONT;
   parts = parts.filter(p => {
     if (p.d > 0) { p.d -= dt; return true; }
@@ -1261,7 +1960,8 @@ function drawParticles(dt){
     p.x += p.vx*dt; p.y += p.vy*dt; p.vy += p.g*dt;
     ctx.globalAlpha = Math.min(1, p.life / p.max * 1.5);
     ctx.fillStyle = css(p.col[0], p.col[1], p.col[2]);
-    ctx.fillText(p.ch, sx(p.x), sy(p.y));
+    if (p.big) { ctx.font = FONT; ctx.strokeStyle = ctx.fillStyle; ctx.strokeText(p.ch, sx(p.x), sy(p.y)); ctx.fillText(p.ch, sx(p.x), sy(p.y)); ctx.font = PFONT; }
+    else ctx.fillText(p.ch, sx(p.x), sy(p.y));
     return true;
   });
   ctx.globalAlpha = 1; ctx.font = FONT;
@@ -1295,9 +1995,9 @@ function updateWeather(t, dt){
     f.x += f.vx * dt; f.y += f.vy * dt;
     return Math.abs(f.x - player.x) < 26 && Math.abs(f.y - player.y) < 18 && zone[idx(clamp(Math.round(f.x), 0, MW - 1), clamp(Math.round(f.y), 0, MH - 1))] === Z.MIRE;
   });
-  // birds over the meadow
-  if (zone[idx(player.x, player.y)] === Z.MEADOW && rnd() < .0025 && W.rain < .5) {
-    const y = CY + 2 + rnd() * 8, dir = rnd() < .5 ? 1 : -1, x = dir > 0 ? CX - 1 : CX + WVW + 1;
+  // birds over the pass
+  if (zone[idx(player.x, player.y)] === Z.PASS && rnd() < .0015 && W.snow < .5) {
+    const y = CY + 2 + rnd() * 6, dir = rnd() < .5 ? 1 : -1, x = dir > 0 ? CX - 1 : CX + WVW + 1;
     for (let k = 0; k < ri(3, 6); k++) parts.push({x:x - dir * k * .9, y:y + (k % 2) * .6 + rnd() * .3, vx:dir * (4 + rnd()), vy:(rnd() - .5) * .3, life:20, max:20, ch:'v', col:[.3,.35,.4], g:0, d:0, bird:1});
   }
 }
@@ -1356,7 +2056,7 @@ let spellBtns = [], sndBtn = null, hudZones = {};
 function bar(v, m, n = 10){ const f = Math.round(clamp(v / m, 0, 1) * n); return '█'.repeat(f) + '░'.repeat(n - f); }
 function weatherLabel(){
   const z = zone[idx(player.x, player.y)];
-  if (!ZONES[z].outdoor) return z === Z.HOUSE ? 'by the fire' : 'underground';
+  if (!ZONES[z].outdoor) return 'underground';
   const L = localW(z), s = [];
   if (state.weather.type === 'storm' && L.rain > .4) return 'storm';
   if (L.snow > .4 && L.wind > .5) return 'blizzard';
@@ -1366,42 +2066,103 @@ function weatherLabel(){
 function drawHUD(t){
   const P = player;
   hudText(0, 0, '─'.repeat(VW), [.2,.3,.22]);
-  const zl = ` ${ZONES[state.zone]?.name || ''} · ${weatherLabel()} `;
+  const zl = ` ${state.floor}/${NFLOORS} · ${ZONES[state.zone]?.name || ''} · ${weatherLabel()} `;
   ctx.fillStyle = '#000'; ctx.fillRect(TW, VH * TH, zl.length * TW, TH);
   hudText(1, 0, zl, [.55,.7,.6]);
   hudZones = {hp:[1]};
-  let c = hudText(1, 1, 'HP ', [.6,.75,.6]);
-  c = hudText(c, 1, bar(P.hp, P.maxhp), P.hp < P.maxhp*.35 ? [1,.3*(.6+.4*Math.sin(t*8)),.25] : [1,.35,.3]);
-  c = hudText(c, 1, ` ${Math.max(0,P.hp)}/${P.maxhp}`.padEnd(8), [.8,.85,.75]);
+  let c = hudText(1, 1, 'HP', [.6,.75,.6]);
+  c = hudText(c, 1, bar(P.hp, P.maxhp, 8), P.poison ? [.5,1,.3] : P.hp < P.maxhp*.35 ? [1,.3*(.6+.4*Math.sin(t*8)),.25] : [1,.35,.3]);
+  c = hudText(c, 1, ` ${Math.max(0,P.hp)}/${P.maxhp}`.padEnd(7), [.8,.85,.75]);
   hudZones.hp.push(c); hudZones.mp = [c];
-  c = hudText(c, 1, 'MP ', [.6,.75,.6]);
-  c = hudText(c, 1, bar(P.mp, P.maxmp), [.4,.7,1]);
-  c = hudText(c, 1, ` ${P.mp}/${P.maxmp}`.padEnd(8), [.8,.85,.75]);
+  c = hudText(c, 1, 'MP', [.6,.75,.6]);
+  c = hudText(c, 1, bar(P.mp, P.maxmp, 8), [.4,.7,1]);
+  c = hudText(c, 1, ` ${P.mp}/${P.maxmp}`.padEnd(7), [.8,.85,.75]);
   hudZones.mp.push(c); hudZones.gold = [c, c + `$${state.gold}`.length];
   c = hudText(c, 1, `$${state.gold} `, [1,.85,.3]);
+  hudZones.ac = [c, c + 5];
+  c = hudText(c, 1, `AC${playerAC()} `, [.75,.8,.9]);
   if (state.belief) hudText(c, 1, '✦', [1,.9,.5 + .3 * Math.sin(t * 3)]);
   { const sl = `[M] ${Snd.label()}`; sndBtn = [VW - 1 - sl.length, VW - 1];
     const ov = hoverAny && hoverAny[1] === VH + 1 && hoverAny[0] >= sndBtn[0] && hoverAny[0] < sndBtn[1];
     hudText(sndBtn[0], 1, sl, ov ? [.7,.95,.75] : [.4,.55,.45]); }
   c = 1; spellBtns = [];
-  const hv = hoverAny && hoverAny[1] === VH + 2 ? hoverAny[0] : -1;
-  for (const k of ['1','2','3']) {
-    const sp = SPELLS[k], sel = state.targeting === k, ok = P.mp >= cost(k);
-    const label = `${sel?'>':'['}${k}${sel?'<':']'} ${sp.name}`;
+  let hv = hoverAny && hoverAny[1] === VH + 2 ? hoverAny[0] : -1;
+  for (const k of Object.keys(SPELLS)) {
+    const sp = SPELLS[k], sel = state.targeting === k, kn = knows(k), ok = kn && P.mp >= cost(k);
+    const label = kn ? `${sel?'>':'['}${k}${sel?'<':']'} ${sp.name}` : `[${k}] ···`;
     const over = hv >= c && hv < c + label.length;
-    const m = sel ? .75 + .35*Math.sin(t*10) : over ? 1.25 : ok ? .8 : .3;
-    spellBtns.push({k, c0:c, c1:c + label.length});
-    c = hudText(c, 2, label + '  ', sp.col.map(v => v*m));
+    const m = !kn ? .25 : sel ? .75 + .35*Math.sin(t*10) : over ? 1.25 : ok ? .8 : .3;
+    spellBtns.push({k, row:2, c0:c, c1:c + label.length});
+    c = hudText(c, 2, label + '  ', kn ? sp.col.map(v => v*m) : [.3,.35,.32]);
   }
+  // potions and pack get a row of their own
+  c = 1; hv = hoverAny && hoverAny[1] === VH + 3 ? hoverAny[0] : -1;
+  for (const [k, key, glyph, name, col] of [['potion', '5', '♥', 'healing', [1,.35,.4]], ['mana', '6', '♦', 'mana', [.4,.6,1]]]) {
+    const n = state.inv[k] || 0, label = `[${key}] ${glyph} ${name} ×${n}`, over = hv >= c && hv < c + label.length, m = over ? 1.25 : n ? .85 : .3;
+    spellBtns.push({k, row:3, c0:c, c1:c + label.length});
+    c = hudText(c, 3, label + '   ', col.map(v => v * m));
+  }
+  { const label = '[I] pack', over = hv >= c && hv < c + label.length;
+    spellBtns.push({k:'pack', row:3, c0:c, c1:c + label.length});
+    c = hudText(c, 3, label + '   ', over || packOpen ? [.85,.95,.8] : [.5,.62,.52]); }
+  { const st = [];
+    if (P.poison) st.push(['poisoned', [.5,1,.3]]); if (P.webbed) st.push(['webbed', [.85,.85,.9]]); if (P.burning) st.push(['burning', [1,.55,.2]]);
+    for (const [s, col] of st) c = hudText(c, 3, s + ' ', col.map(v => v * (.75 + .25 * Math.sin(t * 6)))); }
   if (hover && !dlg) {
     const d = describe(hover[0], hover[1]);
-    if (d) { const str = ` ${d.slice(0, 34)} `, x0 = VW - 2 - str.length;
+    if (d) { const str = ` ${d.slice(0, 30)} `, x0 = VW - 2 - str.length;
       ctx.fillStyle = '#000'; ctx.fillRect(x0*TW, VH*TH, str.length*TW, TH);
       hudText(x0, 0, str, [.75,.95,.75]); }
   }
   const m1 = msgs[msgs.length - 2], m2 = msgs[msgs.length - 1];
-  if (m1) hudText(2, 3, m1.text.slice(0, VW - 4), m1.col.map(v => v*.45));
-  if (m2) hudText(2, 4, m2.text.slice(0, VW - 4), m2.col);
+  if (m1) hudText(2, 4, m1.text.slice(0, VW - 4), m1.col.map(v => v*.45));
+  if (m2) hudText(2, 5, m2.text.slice(0, VW - 4), m2.col);
+}
+
+// ---------- the pack: what you carry, what you wear, what you can drink ----------
+let packOpen = false, packRows = [];
+function questLine(){
+  const q = questFor(state.floor), st = state.quest;
+  if (!q || !st.stage) return 'none yet. Ask the old man.';
+  if (st.stage === 3) return 'done. He was very pleased.';
+  return q.short() + (questDone() ? ' · done, tell him!' : '');
+}
+function drawPack(t){
+  if (!packOpen) return;
+  const w = 52, Wp = weaponStats(), P = player, rows = [];
+  const add = (a, b = '', col = [.82,.86,.8], act = null) => wrap(b, w - 14).forEach((ln, k) => rows.push({a:k ? '' : a, b:ln, col, act}));
+  add('Weapon', capF(Wp.name) + `  ${Wp.lo}-${Wp.hi} dmg, +${playerHit()} to hit`, [.95,.9,.75]);
+  add('', Wp.note, [.55,.65,.58]);
+  for (const s of SLOTS) { const g = state.gear[s]; add(capF(s), g ? `${capF(g.name)}  (+${g.ac} AC)` : '—', g ? [.82,.86,.8] : [.4,.45,.42]); }
+  add('Armour', `AC ${playerAC()}  (what a foe's d20 roll must beat)`, [.75,.8,.95]);
+  add('');
+  add('[a]', `♥ Healing ×${state.inv.potion || 0}   +${POTION_HEAL} HP, cures poison`, state.inv.potion ? [1,.55,.6] : [.4,.35,.36], 'potion');
+  add('[b]', `♦ Mana ×${state.inv.mana || 0}      +${MANA_GAIN} MP`, state.inv.mana ? [.55,.7,1] : [.35,.38,.45], 'mana');
+  add('');
+  const sp = Object.values(SPELLS).filter(s => state.spells[s.id]).map(s => s.name);
+  add('Spells', sp.length ? sp.join(', ') : 'none yet', sp.length ? [.7,.85,1] : [.4,.45,.42]);
+  const keys = Object.keys(state.keys).filter(k => state.keys[k] > 0).map(k => k === 'flower' ? 'a pressed flower' : (state.keys[k] > 1 ? state.keys[k] + ' ' : '') + ITEMS[k].name + (state.keys[k] > 1 ? 's' : ''));
+  if (state.mem.spoon) keys.push('a wooden spoon');
+  add('Carrying', keys.length ? keys.join(', ') : 'nothing else', [.82,.86,.8]);
+  add('Favour', questLine(), [.85,.8,1]);
+  const h = rows.length + 4, px = Math.floor((VW - w) / 2), py = Math.max(1, Math.floor((VH - h) / 2));
+  const fc = [.45,.6,.5];
+  ctx.fillStyle = 'rgba(2,3,3,.95)'; ctx.fillRect(px * TW + TW * .5, py * TH + TH * .5, (w - 1) * TW, (h - 1) * TH);
+  scrText(px, py, '╔' + '═'.repeat(w - 2) + '╗', fc);
+  for (let r = py + 1; r < py + h - 1; r++) { scrText(px, r, '║', fc); scrText(px + w - 1, r, '║', fc); }
+  scrText(px, py + h - 1, '╚' + '═'.repeat(w - 2) + '╝', fc);
+  ctx.fillStyle = 'rgb(2,3,3)'; ctx.fillRect((px + 2) * TW, py * TH, 8 * TW, TH);
+  scrText(px + 2, py, ' PACK ', [.9,.95,.8]);
+  packRows = [];
+  rows.forEach((r, k) => {
+    const y = py + 2 + k, over = r.act && hoverAny && hoverAny[1] === y && hoverAny[0] > px && hoverAny[0] < px + w - 1;
+    if (r.act) packRows.push({y, act:r.act});
+    scrText(px + 2, y, r.a, over ? [1,1,.8] : [.5,.62,.52]);
+    scrText(px + 12, y, r.b.slice(0, w - 14), over ? r.col.map(v => Math.min(1, v * 1.3)) : r.col);
+  });
+  const foot = ' a/b or click: drink · I / Esc: close ';
+  ctx.fillStyle = 'rgb(2,3,3)'; ctx.fillRect((px + w - 2 - foot.length) * TW, (py + h - 1) * TH, foot.length * TW, TH);
+  scrText(px + w - 2 - foot.length, py + h - 1, foot, fc);
 }
 
 function drawScene(t, tn, dt){
@@ -1409,17 +2170,23 @@ function drawScene(t, tn, dt){
   ctx.font = FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineWidth = 1.3; ctx.lineJoin = 'round';
   ctx.save(); ctx.beginPath(); ctx.rect(0, 0, SW, VH * TH); ctx.clip(); ctx.scale(ZOOM, ZOOM);
   drawTiles(t, tn);
-  drawItems();
+  drawDanger(t);
+  drawItems(t);
   drawTargeting(t);
   drawCursor(t);
   drawEnts(t, tn);
   drawProjs();
   drawWeather(t, dt);
   drawBolts(tn);
+  drawSlashes(tn);
+  drawPillars(tn);
   drawParticles(dt);
   ctx.restore();
+  { const p = (tn - screenFlashT) / 130; if (p < 1) { ctx.fillStyle = `rgba(255,245,215,${.2 * (1 - p)})`; ctx.fillRect(0, 0, SW, VH * TH); } }
+  drawBossBar(t);
   Dialog.draw(t);
   drawHUD(t);
+  drawPack(t);
   drawInspect(t);
   drawSplash(t);
 }
@@ -1445,14 +2212,15 @@ function drawSplash(t){
   }
   ctx.restore();
   const line = (row, key, what, kc = [.95,.85,.55]) => { scrText(bx + 4, row, key, kc); scrText(bx + 19, row, what, [.78,.86,.8]); };
-  const tag = 'somewhere, a kettle is on';
+  const tag = 'somewhere below, a stone that never dies';
   scrText(Math.floor(cx - tag.length / 2), by + 4, tag, [.45,.6,.5]);
-  line(by + 7,  'left-click',  'move · attack · talk');
-  line(by + 8,  'right-click', 'inspect anything');
-  line(by + 9,  'WASD',        'move (Q E Z C diagonals)');
-  line(by + 10, 'numpad',      'move');
-  line(by + 11, 'vi-keys',     'move (hjkl yubn)');
-  line(by + 13, '1  2  3',     'lightning · fire · frost', [.7,.85,1]);
+  line(by + 6,  'left-click',  'move · attack · talk');
+  line(by + 7,  'right-click', 'inspect anything');
+  line(by + 8,  'WASD',        'move (Q E Z C diagonals)');
+  line(by + 9,  'numpad · vi', 'move (hjkl yubn)');
+  line(by + 11, '1 2 3 4',     'spells, once you find them', [.7,.85,1]);
+  line(by + 12, '5  6',        'healing · mana potion', [1,.6,.65]);
+  line(by + 13, 'I',           'pack (gear, potions, favours)');
   line(by + 14, 'space',       'wait  ·  M sound');
   const pr = '~ press any key or click ~';
   if (Math.sin(t * 3.5) > -.3) scrText(Math.floor(cx - pr.length / 2), by + bh - 2, pr, [.6,.95,.7]);
@@ -1474,6 +2242,12 @@ addEventListener('keydown', ev => {
   if (dlg) { Dialog.key(ev); return; }
   const k = ev.key.length === 1 ? ev.key.toLowerCase() : ev.key;
   if (k === 'm') { Snd.cycle(); return; }
+  if (packOpen) {
+    ev.preventDefault();
+    if (k === 'a') quaff('potion'); else if (k === 'b') quaff('mana');
+    else if (k === 'i' || k === 'Escape' || k === ' ' || k === 'Enter') { packOpen = false; Snd.cancel(); }
+    return;
+  }
   if (inspect && inspect.confirm) {
     ev.preventDefault();
     if (k === 'y' || k === 'Enter') { inspect = null; Snd.cancel(); init(); }
@@ -1481,13 +2255,16 @@ addEventListener('keydown', ev => {
     return;
   }
   if (inspect) { inspect = null; if (ev.key === 'Escape') return; }
-  if (k === 'r') { if (state.dead || state.won) init(); else askRestart(); return; }
+  if (k === 'r') { if (state.dead) retryFloor(); else if (state.won) init(); else askRestart(); return; }
+  if (k === 'i' && !state.dead && !state.won) { packOpen = true; state.targeting = null; state.travel = null; Snd.page(); return; }
   const dir = NUMPAD[ev.code] || DIRS[k];
   if (state.travel) { state.travel = null; if (dir || k === ' ') ev.preventDefault(); return; }
   if (dir || k === ' ') ev.preventDefault();
   if (state.dead || state.won || projs.length) return;
   if (k === 'Escape') { if (state.targeting) { state.targeting = null; Snd.cancel(); log('Cancelled.', [.5,.6,.5]); } return; }
   if (ev.code.startsWith('Digit') && SPELLS[k]) { beginCast(k); return; }
+  if (ev.code === 'Digit5') { quaff('potion'); return; }
+  if (ev.code === 'Digit6') { quaff('mana'); return; }
   if (state.targeting) { if (dir) castAt(player.x + dir[0]*40, player.y + dir[1]*40); return; }
   if (ev.code === 'Numpad5' || k === ' ' || k === '.') { endTurn(); return; }
   if (dir) playerMove(dir);
@@ -1510,6 +2287,11 @@ out.addEventListener('mousedown', ev => {
   Snd.start();
   if (splash) { splash = false; Snd.page(); return; }
   if (dlg) { if (ev.button === 0 && hoverAny) Dialog.click(hoverAny[0], hoverAny[1]); return; }
+  if (packOpen) {
+    const r = ev.button === 0 && hoverAny && packRows.find(r => r.y === hoverAny[1]);
+    if (r) quaff(r.act); else { packOpen = false; Snd.cancel(); }
+    return;
+  }
   if (ev.button === 2) {
     if (state.targeting) { Snd.cancel(); log('Cancelled.', [.5,.6,.5]); state.targeting = null; return; }
     state.travel = null;
@@ -1522,9 +2304,13 @@ out.addEventListener('mousedown', ev => {
   if (ev.button !== 0 || !hoverAny) return;
   const [tx, ty] = hoverAny;
   if (ty === VH + 1 && sndBtn && tx >= sndBtn[0] && tx < sndBtn[1]) { Snd.cycle(); return; }
-  if (ty === VH + 2) {
-    const b = spellBtns.find(b => tx >= b.c0 && tx < b.c1);
-    if (b && !state.dead && !state.won) { if (state.targeting === b.k) { state.targeting = null; Snd.cancel(); log('Cancelled.', [.5,.6,.5]); } else beginCast(b.k); }
+  if (ty === VH + 2 || ty === VH + 3) {
+    const b = spellBtns.find(b => VH + b.row === ty && tx >= b.c0 && tx < b.c1);
+    if (b && !state.dead && !state.won) {
+      if (b.k === 'potion' || b.k === 'mana') quaff(b.k);
+      else if (b.k === 'pack') { packOpen = true; Snd.page(); }
+      else if (state.targeting === b.k) { state.targeting = null; Snd.cancel(); log('Cancelled.', [.5,.6,.5]); } else beginCast(b.k);
+    }
     return;
   }
   if (!hover || projs.length || state.dead || state.won) return;
@@ -1543,7 +2329,7 @@ function frame(){
   const t = tn / 1000;
   shakeAmp *= Math.pow(.004, dt);
   updateProjs(tn);
-  if (state.travel && !projs.length && tn >= state.travel.next && !dlg) travelStep(tn);
+  if (state.travel && !projs.length && tn >= state.travel.next && !dlg && !packOpen) travelStep(tn);
   Dialog.update(dt);
   updateWeather(t, dt);
   // camera follows the @ smoothly (and lifts when the old man is talking)
@@ -1552,12 +2338,20 @@ function frame(){
   CXr = Math.round(CX * TW * ZOOM) / (TW * ZOOM); CYr = Math.round(CY * TH * ZOOM) / (TH * ZOOM);
   // sound of the place
   const z = zone[idx(player.x, player.y)], L = localW(z);
-  Snd.ambient({rain:ZONES[z].outdoor ? L.rain : z === Z.HOUSE ? W.rain * .8 : 0, wind:ZONES[z].outdoor ? L.wind : z === Z.HOUSE ? W.wind * .6 : 0,
-               lava:z === Z.DEEPS ? 1 : 0, swamp:z === Z.MIRE ? 1 : 0, indoor:z === Z.HOUSE ? 1 : 0, gust:gust(t, player.x)});
+  Snd.ambient({rain:ZONES[z].outdoor ? L.rain : 0, wind:ZONES[z].outdoor ? L.wind : 0,
+               lava:z === Z.DEEPS ? 1 : 0, swamp:z === Z.MIRE ? 1 : 0, indoor:z === Z.TOMB ? .6 : 0, gust:gust(t, player.x)});
   Snd.tone2(ZONES[z].music * (L.snow > .4 ? .75 : 1), dlg ? .4 : 1);
   computeLight(t, tn);
   drawScene(t, tn, dt);
   present(t, dt);
   requestAnimationFrame(frame);
 }
-init(); resize(); requestAnimationFrame(frame);
+if (!loadGame()) init(); resize(); requestAnimationFrame(frame);
+// for testing in the console: warp(n) jumps to floor n with that floor's spells and a fitting kit
+function warp(n){
+  const ids = ['fire', 'lightning', 'frost', 'holy'];
+  for (let k = 0; k < Math.min(4, n - 1); k++) state.spells[ids[k]] = true;
+  state.weapon = {type:'sword', tier:n}; for (let k = 1; k < n; k++) state.gear[GIFTS[k].slot] = GIFTS[k];
+  player.maxhp = 24 + 6 * (n - 1); player.hp = player.maxhp; state.inv.potion = 3; state.inv.mana = 2;
+  enterLevel(n);
+}
